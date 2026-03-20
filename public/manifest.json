@@ -1,0 +1,16 @@
+{
+  "name": "FMS Pro",
+  "short_name": "FMS Pro",
+  "description": "Football Management System",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#10b981",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64",
+      "type": "image/x-icon"
+    }
+  ]
+}
