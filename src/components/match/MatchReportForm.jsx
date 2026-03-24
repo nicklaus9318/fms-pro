@@ -7,7 +7,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { base44 } from '@/api/base44Client';
-import { Loader2, Plus, Trash2, Trophy, Star, Upload, Youtube, Image as ImageIcon, Ambulance } from 'lucide-react';
+import { supabase } from '@/api/supabaseClient';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/api/supabaseClient';
+import { useQuery } from '@tanstack/react-query';
+import { Loader2, Plus, Trash2, Trophy, Star, Upload, Youtube, Image as ImageIcon, Ambulance, ScanSearch, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function MatchReportForm({ open, onClose, match, homeTeam, awayTeam, homePlayers, awayPlayers, onSubmit, readOnly = false }) {
@@ -30,6 +34,131 @@ export default function MatchReportForm({ open, onClose, match, homeTeam, awayTe
   });
   const [loading, setLoading] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [analyzingPhotos, setAnalyzingPhotos] = useState(false);
+  const [aiWarnings, setAiWarnings] = useState([]);
+
+  // Giocatori squalificati o infortunati
+  const { data: playerStatuses = [] } = useQuery({
+    queryKey: ['playerStatusesMatchForm'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('player_statuses')
+        .select('*')
+        .in('status_type', ['suspended', 'injured']);
+      if (error) throw error;
+      return data || [];
+    }
+  });
+
+  // Analisi foto con Claude Vision
+  const analyzePhotosWithAI = async () => {
+    if (formData.photos.length === 0) {
+      toast.error('Carica almeno una foto prima di analizzare');
+      return;
+    }
+
+    // Costruisci lista giocatori a rischio (squalificati/infortunati)
+    const riskyPlayerIds = playerStatuses.map(s => s.player_id);
+    const riskyPlayers = allPlayers.filter(p => riskyPlayerIds.includes(p.id));
+
+    if (riskyPlayers.length === 0) {
+      toast.info('Nessun giocatore squalificato o infortunato registrato al momento');
+      return;
+    }
+
+    setAnalyzingPhotos(true);
+    setAiWarnings([]);
+
+    try {
+      // Converti le foto in base64
+      const imageContents = [];
+      for (const photoUrl of formData.photos.slice(0, 4)) { // max 4 foto per non sforare token
+        try {
+          const res = await fetch(photoUrl);
+          const blob = await res.blob();
+          const base64 = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result.split(',')[1]);
+            reader.readAsDataURL(blob);
+          });
+          const mediaType = blob.type || 'image/jpeg';
+          imageContents.push({ type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } });
+        } catch (e) {
+          console.warn('Impossibile caricare foto:', photoUrl, e.message);
+        }
+      }
+
+      if (imageContents.length === 0) {
+        toast.error('Impossibile leggere le foto. Verifica che siano accessibili.');
+        setAnalyzingPhotos(false);
+        return;
+      }
+
+      const riskyNames = riskyPlayers.map(p => {
+        const status = playerStatuses.find(s => s.player_id === p.id);
+        return `${p.first_name} ${p.last_name} (${status?.status_type === 'suspended' ? 'SQUALIFICATO' : 'INFORTUNATO'})`;
+      }).join('
+');
+
+      const prompt = `Analizza queste foto di una partita di calcio.
+Cerca nei tabellini, nei nomi sulle maglie, nelle grafiche a schermo, o in qualsiasi testo visibile i seguenti giocatori che NON dovrebbero essere in campo perché squalificati o infortunati:
+
+${riskyNames}
+
+Rispondi SOLO in formato JSON, senza testo aggiuntivo:
+{
+  "found": [
+    { "name": "Nome Cognome", "reason": "squalificato" o "infortunato", "confidence": "high" o "medium" o "low", "detail": "breve descrizione di dove/come è stato identificato" }
+  ],
+  "message": "breve riassunto"
+}
+Se non trovi nessun giocatore a rischio, rispondi con found: [].`;
+
+      const response = await fetch('/api/claude', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-opus-4-5',
+          max_tokens: 1000,
+          messages: [{
+            role: 'user',
+            content: [
+              ...imageContents,
+              { type: 'text', text: prompt }
+            ]
+          }]
+        })
+      });
+
+      if (!response.ok) throw new Error('Errore risposta AI: ' + response.status);
+
+      const data = await response.json();
+      const text = data.content?.[0]?.text || '';
+
+      let parsed;
+      try {
+        const clean = text.replace(/```json|```/g, '').trim();
+        parsed = JSON.parse(clean);
+      } catch {
+        toast.error('Risposta AI non leggibile');
+        setAnalyzingPhotos(false);
+        return;
+      }
+
+      if (parsed.found && parsed.found.length > 0) {
+        setAiWarnings(parsed.found);
+        toast.warning(`⚠️ Trovati ${parsed.found.length} giocatore/i a rischio nelle foto!`);
+      } else {
+        setAiWarnings([]);
+        toast.success('✅ Nessun giocatore squalificato/infortunato rilevato nelle foto');
+      }
+
+    } catch (e) {
+      toast.error('Errore analisi AI: ' + e.message);
+    }
+
+    setAnalyzingPhotos(false);
+  };
 
   const allPlayers = [...(homePlayers || []), ...(awayPlayers || [])];
   const homeGoalkeepers = homePlayers?.filter(p => p.role === 'POR') || [];
@@ -649,6 +778,20 @@ export default function MatchReportForm({ open, onClose, match, homeTeam, awayTe
                     {uploadingPhoto && <Loader2 className="w-4 h-4 animate-spin" />}
                   </div>
                 )}
+                {formData.photos.length > 0 && !readOnly && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full border-amber-300 text-amber-700 hover:bg-amber-50"
+                    onClick={analyzePhotosWithAI}
+                    disabled={analyzingPhotos}
+                  >
+                    {analyzingPhotos
+                      ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Analisi AI in corso...</>
+                      : <><ScanSearch className="w-4 h-4 mr-2" />Analizza foto — rileva squalificati/infortunati</>
+                    }
+                  </Button>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -677,6 +820,44 @@ export default function MatchReportForm({ open, onClose, match, homeTeam, awayTe
               </div>
             </CardContent>
           </Card>
+
+          {/* Banner avvisi AI */}
+          {aiWarnings.length > 0 && (
+            <Card className="border-amber-400 bg-amber-50">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-amber-700 text-sm">
+                  <ShieldAlert className="w-5 h-5" />
+                  ⚠️ Attenzione — Giocatori a rischio rilevati nelle foto
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {aiWarnings.map((w, i) => (
+                  <div key={i} className={`flex items-start gap-3 p-3 rounded-lg border ${
+                    w.reason === 'squalificato' ? 'bg-red-50 border-red-200' : 'bg-orange-50 border-orange-200'
+                  }`}>
+                    <AlertTriangle className={`w-4 h-4 mt-0.5 shrink-0 ${w.reason === 'squalificato' ? 'text-red-500' : 'text-orange-500'}`} />
+                    <div>
+                      <p className="font-semibold text-sm text-slate-800">
+                        {w.name}
+                        <span className={`ml-2 text-xs font-medium px-1.5 py-0.5 rounded ${
+                          w.reason === 'squalificato' ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'
+                        }`}>
+                          {w.reason?.toUpperCase()}
+                        </span>
+                        <span className="ml-2 text-xs text-slate-400">
+                          (confidenza: {w.confidence})
+                        </span>
+                      </p>
+                      {w.detail && <p className="text-xs text-slate-500 mt-0.5">{w.detail}</p>}
+                    </div>
+                  </div>
+                ))}
+                <p className="text-xs text-amber-600 mt-2">
+                  Verifica manualmente prima di salvare il report.
+                </p>
+              </CardContent>
+            </Card>
+          )}
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
