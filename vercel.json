@@ -5,7 +5,7 @@
       "destination": "https://cdn.sofifa.net/players/:path*"
     },
     {
-      "source": "/((?!sofifa-img).*)",
+      "source": "/((?!sofifa-img|api).*)",
       "destination": "/index.html"
     }
   ],
