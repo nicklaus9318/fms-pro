@@ -572,6 +572,72 @@ function MercatoManager() {
   );
 }
 
+// ─── ResetCard ────────────────────────────────────────────────────────────────
+const COLOR_MAP = {
+  amber:  { border: 'border-amber-200',  bg: 'bg-amber-50',  title: 'text-amber-700',  dot: 'bg-amber-500',  btn: 'bg-amber-600 hover:bg-amber-700' },
+  orange: { border: 'border-orange-200', bg: 'bg-orange-50', title: 'text-orange-700', dot: 'bg-orange-500', btn: 'bg-orange-600 hover:bg-orange-700' },
+  blue:   { border: 'border-blue-200',   bg: 'bg-blue-50',   title: 'text-blue-700',   dot: 'bg-blue-500',   btn: 'bg-blue-700 hover:bg-blue-800' },
+  purple: { border: 'border-purple-200', bg: 'bg-purple-50', title: 'text-purple-700', dot: 'bg-purple-500', btn: 'bg-purple-700 hover:bg-purple-800' },
+  red:    { border: 'border-red-200',    bg: 'bg-red-50',    title: 'text-red-700',    dot: 'bg-red-500',    btn: 'bg-red-700 hover:bg-red-800' },
+};
+
+function ResetCard({ color, title, description, items, confirmText, doubleConfirm, buttonLabel, onConfirm, queryClient, successMessage }) {
+  const [loading, setLoading] = useState(false);
+  const c = COLOR_MAP[color] || COLOR_MAP.red;
+
+  const handleClick = async () => {
+    if (!window.confirm(confirmText)) return;
+    if (doubleConfirm && !window.confirm('Sei ASSOLUTAMENTE SICURO? Non può essere annullato.')) return;
+    setLoading(true);
+    const t = toast.loading('Operazione in corso...');
+    try {
+      await onConfirm();
+      queryClient.invalidateQueries();
+      toast.dismiss(t);
+      toast.success(successMessage);
+    } catch (e) {
+      toast.dismiss(t);
+      toast.error('Errore: ' + e.message);
+    }
+    setLoading(false);
+  };
+
+  return (
+    <Card className={`${c.border} ${c.bg}`}>
+      <CardHeader className="pb-3">
+        <CardTitle className={`flex items-center gap-2 ${c.title}`}>
+          <Trash2 className="w-5 h-5" />
+          {title}
+        </CardTitle>
+        <p className="text-sm text-slate-600 mt-1">{description}</p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="bg-white rounded-lg p-4 border border-slate-200">
+          <ul className="space-y-1.5">
+            {items.map((item, i) => (
+              <li key={i} className="flex items-center gap-2 text-sm text-slate-700">
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${c.dot}`} />
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <Button
+          onClick={handleClick}
+          disabled={loading}
+          className={`w-full text-white ${c.btn}`}
+          size="lg"
+        >
+          {loading
+            ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Operazione in corso...</>
+            : <><Trash2 className="w-4 h-4 mr-2" />{buttonLabel}</>
+          }
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── AdminPanel ───────────────────────────────────────────────────────────────
 export default function AdminPanel() {
   const [user, setUser] = useState(null);
@@ -579,7 +645,6 @@ export default function AdminPanel() {
   const [leagueFormData, setLeagueFormData] = useState({ name:'', season:'', default_budget:100000000, participating_teams:[], competition_format:'league', logo_url:'' });
   const [uploadingLeagueLogo, setUploadingLeagueLogo] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [isResettingStats, setIsResettingStats] = useState(false);
   const [generatingKnockout, setGeneratingKnockout] = useState(false);
   const [selectedKnockoutCompetition, setSelectedKnockoutCompetition] = useState(null);
   const [valueSearchTerm, setValueSearchTerm] = useState('');
@@ -786,74 +851,199 @@ export default function AdminPanel() {
         <TabsContent value="team_rosters"><TeamRosterManager /></TabsContent>
 
         {/* ── Reset ── */}
-        <TabsContent value="reset" className="space-y-6">
-          <Card className="border-red-200 bg-red-50">
-            <CardHeader><CardTitle className="flex items-center gap-2 text-red-700"><Trash2 className="w-5 h-5" />Azzera Tutte le Statistiche</CardTitle></CardHeader>
-            <CardContent className="space-y-4">
-              <div className="bg-white rounded-lg p-4 border border-red-200">
-                <ul className="space-y-2 text-sm text-slate-700">
-                  <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 bg-red-500 rounded-full"></span>Gol, assist e MVP</li>
-                  <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 bg-red-500 rounded-full"></span>Cartellini gialli e rossi accumulati</li>
-                  <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 bg-red-500 rounded-full"></span>Classifiche (punti, vittorie, gol)</li>
-                  <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 bg-red-500 rounded-full"></span>Squalifiche e infortuni attivi</li>
-                </ul>
+        <TabsContent value="reset" className="space-y-4">
+
+          {/* Avviso generale */}
+          <Card className="border-red-300 bg-red-50">
+            <CardContent className="pt-4">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 shrink-0" />
+                <p className="text-sm text-red-700 font-medium">
+                  Tutte le operazioni in questa sezione sono <strong>irreversibili</strong>. Procedi solo se sei assolutamente sicuro.
+                </p>
               </div>
-              <Button onClick={async () => {
-                if (!window.confirm('⚠️ Azzera statistiche, cartellini, classifiche e squalifiche?\n\nNon può essere annullata.')) return;
-                setIsResettingStats(true);
-                try { await base44.functions.invoke('resetAllStatistics'); queryClient.invalidateQueries(); toast.success('Statistiche azzerate'); }
-                catch (e) { toast.error('Errore: ' + e.message); }
-                setIsResettingStats(false);
-              }} disabled={isResettingStats} variant="destructive" className="w-full" size="lg">
-                {isResettingStats ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Azzeramento...</> : <><Trash2 className="w-4 h-4 mr-2" />Azzera Tutte le Statistiche</>}
-              </Button>
             </CardContent>
           </Card>
 
-          <Card className="border-orange-200 bg-orange-50">
-            <CardHeader><CardTitle className="flex items-center gap-2 text-orange-700"><Trash2 className="w-5 h-5" />Elimina Tutti i Giocatori</CardTitle></CardHeader>
-            <CardContent className="space-y-4">
-              <div className="bg-rose-50 border border-rose-300 rounded-lg p-4">
-                <p className="text-sm text-rose-800 font-medium">⚠️ Cancellerà PERMANENTEMENTE tutti i giocatori dal database.</p>
-              </div>
-              <Button onClick={async () => {
-                if (!window.confirm('⚠️ Eliminare TUTTI I GIOCATORI? Non può essere annullata!')) return;
-                if (!window.confirm('Sei ASSOLUTAMENTE SICURO?')) return;
-                setIsResettingStats(true);
-                const t = toast.loading('Eliminazione...');
-                try { await base44.functions.invoke('deleteAllPlayers'); toast.dismiss(t); toast.success('Tutti i giocatori eliminati'); queryClient.invalidateQueries(); }
-                catch (e) { toast.dismiss(t); toast.error(`Errore: ${e.message}`); }
-                setIsResettingStats(false);
-              }} disabled={isResettingStats} variant="destructive" className="w-full bg-orange-600 hover:bg-orange-700" size="lg">
-                {isResettingStats ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />...</> : <><Trash2 className="w-4 h-4 mr-2" />🗑️ Elimina Tutti i Giocatori</>}
-              </Button>
-            </CardContent>
-          </Card>
+          {/* 1 — Azzera Statistiche Giocatori */}
+          <ResetCard
+            color="amber"
+            title="Azzera Statistiche Giocatori"
+            description="Azzera gol, assist, MVP, cartellini su tutti i giocatori. Elimina squalifiche, infortuni e classifiche."
+            items={[
+              'Gol, assist, MVP (tabella players)',
+              'Cartellini gialli e rossi (tabella players)',
+              'Squalifiche e infortuni (player_statuses)',
+              'Sanzioni attive (sanctions)',
+              'Classifiche (standings)',
+            ]}
+            confirmText="Azzera statistiche giocatori, squalifiche e classifiche? Operazione irreversibile."
+            buttonLabel="Azzera Statistiche Giocatori"
+            onConfirm={async () => {
+              // 1. Reset colonne statistiche su players
+              const { error: e1 } = await supabase
+                .from('players')
+                .update({ goals: 0, assists: 0, mvp_count: 0, yellow_cards: 0, red_cards: 0 })
+                .neq('id', '00000000-0000-0000-0000-000000000000'); // tutti i record
+              if (e1) throw new Error('players: ' + e1.message);
 
-          <Card className="border-purple-200 bg-purple-50">
-            <CardHeader><CardTitle className="flex items-center gap-2 text-purple-700"><Trash2 className="w-5 h-5" />Reset Completo Stagione</CardTitle></CardHeader>
-            <CardContent className="space-y-4">
-              <div className="bg-white rounded-lg p-4 border border-purple-200">
-                <ul className="space-y-2 text-sm text-slate-700">
-                  <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 bg-purple-500 rounded-full"></span>Tutte le partite giocate</li>
-                  <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 bg-purple-500 rounded-full"></span>Tutti i trasferimenti</li>
-                  <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 bg-purple-500 rounded-full"></span>Tutte le aste e offerte</li>
-                  <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 bg-purple-500 rounded-full"></span>Tutte le transazioni di budget</li>
-                </ul>
-              </div>
-              <Button onClick={async () => {
-                if (!window.confirm('🔥 Reset TOTALE della stagione. Procedere?')) return;
-                if (!window.confirm('Sei ASSOLUTAMENTE SICURO?')) return;
-                setIsResettingStats(true);
-                const t = toast.loading('Reset...');
-                try { await base44.functions.invoke('resetSeasonData'); toast.dismiss(t); toast.success('Stagione azzerata'); queryClient.invalidateQueries(); }
-                catch (e) { toast.dismiss(t); toast.error(`Errore: ${e.message}`); }
-                setIsResettingStats(false);
-              }} disabled={isResettingStats} variant="destructive" className="w-full bg-purple-700 hover:bg-purple-800" size="lg">
-                {isResettingStats ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Reset...</> : <><Trash2 className="w-4 h-4 mr-2" />🔥 Reset Completo Stagione</>}
-              </Button>
-            </CardContent>
-          </Card>
+              // 2. Elimina tutti i player_statuses
+              const { error: e2 } = await supabase
+                .from('player_statuses')
+                .delete()
+                .neq('id', '00000000-0000-0000-0000-000000000000');
+              if (e2) throw new Error('player_statuses: ' + e2.message);
+
+              // 3. Elimina tutte le sanctions
+              const { error: e3 } = await supabase
+                .from('sanctions')
+                .delete()
+                .neq('id', '00000000-0000-0000-0000-000000000000');
+              if (e3) throw new Error('sanctions: ' + e3.message);
+
+              // 4. Elimina tutte le standings
+              const { error: e4 } = await supabase
+                .from('standings')
+                .delete()
+                .neq('id', '00000000-0000-0000-0000-000000000000');
+              if (e4) throw new Error('standings: ' + e4.message);
+            }}
+            queryClient={queryClient}
+            successMessage="Statistiche giocatori azzerate con successo"
+          />
+
+          {/* 2 — Reset Aste */}
+          <ResetCard
+            color="orange"
+            title="Reset Aste"
+            description="Elimina tutte le aste e le relative offerte. I giocatori e le squadre restano invariati."
+            items={[
+              'Tutte le aste (auctions)',
+              'Tutte le offerte (bids)',
+            ]}
+            confirmText="Eliminare TUTTE le aste e offerte? Operazione irreversibile."
+            buttonLabel="Reset Aste e Offerte"
+            onConfirm={async () => {
+              const { error: e1 } = await supabase
+                .from('bids')
+                .delete()
+                .neq('id', '00000000-0000-0000-0000-000000000000');
+              if (e1) throw new Error('bids: ' + e1.message);
+
+              const { error: e2 } = await supabase
+                .from('auctions')
+                .delete()
+                .neq('id', '00000000-0000-0000-0000-000000000000');
+              if (e2) throw new Error('auctions: ' + e2.message);
+            }}
+            queryClient={queryClient}
+            successMessage="Aste e offerte eliminate"
+          />
+
+          {/* 3 — Reset Budget Squadre */}
+          <ResetCard
+            color="blue"
+            title="Reset Budget Squadre"
+            description="Ripristina il budget di tutte le squadre al valore di default (100.000.000€) ed elimina lo storico transazioni."
+            items={[
+              'Budget squadre → €100.000.000 (tabella teams)',
+              'Storico transazioni (budget_transactions)',
+            ]}
+            confirmText="Ripristinare il budget di tutte le squadre a €100M ed eliminare lo storico transazioni?"
+            buttonLabel="Reset Budget Squadre"
+            onConfirm={async () => {
+              const { error: e1 } = await supabase
+                .from('teams')
+                .update({ budget: 100000000 })
+                .neq('id', '00000000-0000-0000-0000-000000000000');
+              if (e1) throw new Error('teams budget: ' + e1.message);
+
+              const { error: e2 } = await supabase
+                .from('budget_transactions')
+                .delete()
+                .neq('id', '00000000-0000-0000-0000-000000000000');
+              if (e2) throw new Error('budget_transactions: ' + e2.message);
+            }}
+            queryClient={queryClient}
+            successMessage="Budget squadre ripristinato e storico eliminato"
+          />
+
+          {/* 4 — Reset Completo Stagione */}
+          <ResetCard
+            color="purple"
+            title="Reset Completo Stagione"
+            description="Azzera l'intera stagione: partite, trasferimenti, aste, budget, sanzioni, classifiche e stati giocatori."
+            items={[
+              'Tutte le partite (matches)',
+              'Tutti i trasferimenti (transfers)',
+              'Tutte le aste e offerte (auctions + bids)',
+              'Tutte le transazioni budget (budget_transactions)',
+              'Classifiche (standings)',
+              'Sanzioni (sanctions)',
+              'Stati giocatori (player_statuses)',
+            ]}
+            confirmText="🔥 Reset TOTALE della stagione. Tutte le partite, trasferimenti, aste e budget saranno eliminati. Sei sicuro?"
+            doubleConfirm
+            buttonLabel="🔥 Reset Completo Stagione"
+            onConfirm={async () => {
+              const tables = ['bids', 'auctions', 'transfers', 'budget_transactions', 'standings', 'sanctions', 'player_statuses', 'matches'];
+              for (const table of tables) {
+                const { error } = await supabase
+                  .from(table)
+                  .delete()
+                  .neq('id', '00000000-0000-0000-0000-000000000000');
+                if (error) throw new Error(`${table}: ${error.message}`);
+              }
+              // Reset budget squadre
+              const { error: eb } = await supabase
+                .from('teams')
+                .update({ budget: 100000000 })
+                .neq('id', '00000000-0000-0000-0000-000000000000');
+              if (eb) throw new Error('teams budget: ' + eb.message);
+              // Reset statistiche giocatori
+              const { error: ep } = await supabase
+                .from('players')
+                .update({ goals: 0, assists: 0, mvp_count: 0, yellow_cards: 0, red_cards: 0 })
+                .neq('id', '00000000-0000-0000-0000-000000000000');
+              if (ep) throw new Error('players stats: ' + ep.message);
+            }}
+            queryClient={queryClient}
+            successMessage="Stagione azzerata completamente"
+          />
+
+          {/* 5 — Elimina Tutti i Giocatori */}
+          <ResetCard
+            color="red"
+            title="Elimina Tutti i Giocatori"
+            description="Cancella PERMANENTEMENTE tutti i giocatori dal database. Le squadre rimarranno vuote."
+            items={[
+              'Tutti i giocatori (tabella players)',
+              'Stati giocatori collegati (player_statuses)',
+              'Sanzioni collegate (sanctions)',
+            ]}
+            confirmText="⚠️ Eliminare TUTTI I GIOCATORI? Questa operazione non può essere annullata!"
+            doubleConfirm
+            buttonLabel="🗑️ Elimina Tutti i Giocatori"
+            onConfirm={async () => {
+              // Prima elimina le tabelle dipendenti
+              for (const table of ['player_statuses', 'sanctions']) {
+                const { error } = await supabase
+                  .from(table)
+                  .delete()
+                  .neq('id', '00000000-0000-0000-0000-000000000000');
+                if (error) throw new Error(`${table}: ${error.message}`);
+              }
+              // Poi elimina i giocatori
+              const { error } = await supabase
+                .from('players')
+                .delete()
+                .neq('id', '00000000-0000-0000-0000-000000000000');
+              if (error) throw new Error('players: ' + error.message);
+            }}
+            queryClient={queryClient}
+            successMessage="Tutti i giocatori eliminati"
+          />
+
         </TabsContent>
 
         {/* ── Leagues ── */}
