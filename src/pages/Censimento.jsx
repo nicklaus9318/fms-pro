@@ -42,31 +42,41 @@ export default function Censimento() {
 
   const calculateSalary = (overallRating) => {
     if (!overallRating) return 0;
-    if (overallRating >= 88) return 1000000;
-    if (overallRating >= 85) return 700000;
-    if (overallRating >= 82) return 500000;
-    if (overallRating >= 75) return 250000;
+    if (overallRating >= 90) return 10000000;
+    if (overallRating >= 88) return 7000000;
+    if (overallRating >= 85) return 5000000;
+    if (overallRating >= 82) return 3000000;
+    if (overallRating >= 75) return 1500000;
+    if (overallRating >= 65) return 500000;
     return 100000;
   };
 
   const calculatePlayerValue = (overall, age) => {
     if (!overall || overall < 40) return 500000;
     const ageNum = age || 25;
-    if (overall > 85 && ageNum < 25) {
-      return 30000000 + (overall - 85) * 4000000;
-    } else if (overall >= 80 && overall <= 85 && ageNum < 25) {
-      return 25000000 - (85 - overall) * 1000000;
-    } else if (overall < 80) {
-      const baseValue = 1000000;
-      const overallContribution = (overall - 60) * 400000;
-      const ageContribution = (30 - ageNum) * 200000;
-      return Math.max(0, Math.min(15000000, baseValue + overallContribution + ageContribution));
-    } else {
-      const baseValue = 15000000;
-      const overallContribution = (overall - 80) * 500000;
-      const ageContribution = (30 - ageNum) * 300000;
-      return Math.max(5000000, Math.min(25000000, baseValue + overallContribution + ageContribution));
+    // Overall 90+ età 23-28 → fino a 150M
+    if (overall >= 90 && ageNum >= 23 && ageNum <= 28) {
+      const v = 80000000 + (overall - 90) * 14000000 + (28 - Math.abs(ageNum - 25)) * 1000000;
+      return Math.min(150000000, v);
     }
+    // Overall 85-89 età <25 → fino a 50M
+    if (overall >= 85 && overall < 90 && ageNum < 25) {
+      const v = 20000000 + (overall - 85) * 6000000 + (25 - ageNum) * 1000000;
+      return Math.min(50000000, v);
+    }
+    // Overall 85+ senior → fino a 80M
+    if (overall >= 85) {
+      const v = 30000000 + (overall - 85) * 7000000;
+      return Math.min(80000000, v);
+    }
+    // Overall 80-85 → fino a 50M
+    if (overall >= 80) {
+      const v = 10000000 + (overall - 80) * 8000000;
+      return Math.min(50000000, v);
+    }
+    // Overall <80 → fino a 30M
+    const v = 1000000 + (overall - 60) * 400000 + Math.max(0, 30 - ageNum) * 200000;
+    return Math.max(0, Math.min(30000000, v));
   };
 
   useEffect(() => {
@@ -80,6 +90,15 @@ export default function Censimento() {
     };
     loadUser();
   }, []);
+
+  const { data: appSettings = [] } = useQuery({
+    queryKey: ['appSettings'],
+    queryFn: () => base44.entities.AppSettings.list()
+  });
+
+  const censimentoStatus = appSettings.find(s => s.key === 'censimento_status')?.value;
+  const censimentoSessionName = appSettings.find(s => s.key === 'censimento_session_name')?.value || '';
+  const censimentoClosed = censimentoStatus === 'closed';
 
   const { data: myPlayers = [] } = useQuery({
     queryKey: ['myRegisteredPlayers', user?.email],
@@ -114,7 +133,7 @@ export default function Censimento() {
   });
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    if (e?.preventDefault) e.preventDefault();
     if (!formData.first_name || !formData.last_name || !formData.role) {
       toast.error('Compila i campi obbligatori');
       return;
@@ -153,11 +172,22 @@ export default function Censimento() {
           <h1 className="text-2xl font-bold text-slate-800">Censimento Giocatori</h1>
           <p className="text-slate-500">Registra nuovi giocatori e guadagna dalla loro vendita</p>
         </div>
-        <Button onClick={() => setShowForm(true)} className="gap-2">
+        <Button onClick={() => setShowForm(true)} disabled={censimentoClosed} className="gap-2">
           <UserPlus className="w-4 h-4" />
           Registra Giocatore
         </Button>
       </div>
+
+      {censimentoClosed && (
+        <div className="bg-rose-50 border border-rose-200 rounded-lg p-4 text-sm text-rose-800 flex items-center gap-2">
+          🔴 <strong>Censimento chiuso</strong> — non è possibile registrare nuovi giocatori al momento.
+        </div>
+      )}
+      {censimentoSessionName && !censimentoClosed && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-emerald-800">
+          📋 Sessione attiva: <strong>{censimentoSessionName}</strong>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
@@ -308,7 +338,7 @@ export default function Censimento() {
             </div>
             <div className="flex justify-end gap-3 pt-4">
               <Button type="button" variant="outline" onClick={() => setShowForm(false)}>Annulla</Button>
-              <Button type="submit" disabled={createPlayerMutation.isPending} className="gap-2">
+              <Button type="button" onClick={handleSubmit} disabled={createPlayerMutation.isPending} className="gap-2">
                 {createPlayerMutation.isPending ? (
                   <><Loader2 className="w-4 h-4 animate-spin" />Registrazione...</>
                 ) : (

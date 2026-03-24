@@ -511,7 +511,6 @@ export default function Market() {
             <Users className="w-4 h-4" />
             Svincola
           </TabsTrigger>
-          <TabsTrigger value="history">Storico</TabsTrigger>
         </TabsList>
 
         <TabsContent value="auctions" className="space-y-8">
@@ -677,13 +676,7 @@ export default function Market() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="history">
-          <Card className="bg-slate-50 border-dashed">
-            <CardContent className="py-12 text-center">
-              <p className="text-slate-500">Consulta lo <a href="/auction-history" className="text-blue-600 hover:underline">Storico Aste completo</a></p>
-            </CardContent>
-          </Card>
-        </TabsContent>
+
       </Tabs>
 
       {/* Transfer Form Modal */}

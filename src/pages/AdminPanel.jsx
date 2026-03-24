@@ -388,6 +388,101 @@ function MercatoManager() {
   return (
     <div className="space-y-6">
 
+      {/* ── Censimento ── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="w-5 h-5 text-emerald-500" />
+            Sessione Censimento
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {(() => {
+            const censimentoStatus = appSettings.find(s => s.key === 'censimento_status');
+            const censimentoOpen = censimentoStatus?.value === 'open';
+            const censimentoName = appSettings.find(s => s.key === 'censimento_session_name')?.value || '';
+            const toggleCensimento = async () => {
+              const t = toast.loading(censimentoOpen ? 'Chiusura censimento...' : 'Apertura censimento...');
+              try {
+                const newStatus = censimentoOpen ? 'closed' : 'open';
+                const existing = appSettings.find(s => s.key === 'censimento_status');
+                if (existing) await base44.entities.AppSettings.update(existing.id, { value: newStatus });
+                else await base44.entities.AppSettings.create({ key: 'censimento_status', value: newStatus });
+                queryClient.invalidateQueries({ queryKey: ['appSettings'] });
+                toast.dismiss(t);
+                toast.success(newStatus === 'open' ? 'Censimento aperto!' : 'Censimento chiuso!');
+              } catch (e) { toast.dismiss(t); toast.error('Errore: ' + e.message); }
+            };
+            const saveCensimentoName = async (name) => {
+              const existing = appSettings.find(s => s.key === 'censimento_session_name');
+              if (existing) await base44.entities.AppSettings.update(existing.id, { value: name });
+              else await base44.entities.AppSettings.create({ key: 'censimento_session_name', value: name });
+              queryClient.invalidateQueries({ queryKey: ['appSettings'] });
+            };
+            return (
+              <>
+                <div className="flex items-center justify-between p-4 rounded-xl border-2 border-dashed">
+                  <div>
+                    <p className="font-semibold text-slate-800">Stato Censimento</p>
+                    <p className="text-sm text-slate-500">
+                      {censimentoOpen ? '🟢 Censimento aperto — gli utenti possono registrare giocatori' : '🔴 Censimento chiuso — nessuna registrazione consentita'}
+                    </p>
+                  </div>
+                  <Button onClick={toggleCensimento} className={censimentoOpen ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'}>
+                    {censimentoOpen ? <><Lock className="w-4 h-4 mr-2" />Chiudi</> : <><Unlock className="w-4 h-4 mr-2" />Apri</>}
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-600">Nome Sessione Censimento</label>
+                  <Input placeholder="Es: Censimento Stagione 3" defaultValue={censimentoName} onBlur={(e) => saveCensimentoName(e.target.value)} />
+                </div>
+              </>
+            );
+          })()}
+        </CardContent>
+      </Card>
+
+      {/* ── Registrazioni Utenti ── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="w-5 h-5 text-amber-500" />
+            Registrazioni Utenti
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {(() => {
+            const regStatus = appSettings.find(s => s.key === 'registrations_status');
+            const regOpen = regStatus?.value !== 'closed'; // aperto di default
+            const toggleReg = async () => {
+              const t = toast.loading(regOpen ? 'Chiusura registrazioni...' : 'Apertura registrazioni...');
+              try {
+                const newStatus = regOpen ? 'closed' : 'open';
+                const existing = appSettings.find(s => s.key === 'registrations_status');
+                if (existing) await base44.entities.AppSettings.update(existing.id, { value: newStatus });
+                else await base44.entities.AppSettings.create({ key: 'registrations_status', value: newStatus });
+                queryClient.invalidateQueries({ queryKey: ['appSettings'] });
+                toast.dismiss(t);
+                toast.success(newStatus === 'open' ? 'Registrazioni aperte!' : 'Registrazioni chiuse!');
+              } catch (e) { toast.dismiss(t); toast.error('Errore: ' + e.message); }
+            };
+            return (
+              <div className="flex items-center justify-between p-4 rounded-xl border-2 border-dashed">
+                <div>
+                  <p className="font-semibold text-slate-800">Nuove Registrazioni</p>
+                  <p className="text-sm text-slate-500">
+                    {regOpen ? '🟢 Aperte — i nuovi utenti possono registrarsi' : '🔴 Chiuse — solo gli utenti esistenti possono accedere'}
+                  </p>
+                </div>
+                <Button onClick={toggleReg} className={regOpen ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'}>
+                  {regOpen ? <><Lock className="w-4 h-4 mr-2" />Chiudi</> : <><Unlock className="w-4 h-4 mr-2" />Apri</>}
+                </Button>
+              </div>
+            );
+          })()}
+        </CardContent>
+      </Card>
+
       {/* ── Calciomercato ── */}
       <Card>
         <CardHeader>
@@ -481,7 +576,8 @@ function MercatoManager() {
 export default function AdminPanel() {
   const [user, setUser] = useState(null);
   const [showLeagueForm, setShowLeagueForm] = useState(false);
-  const [leagueFormData, setLeagueFormData] = useState({ name:'', season:'', default_budget:100000000, participating_teams:[], competition_format:'league' });
+  const [leagueFormData, setLeagueFormData] = useState({ name:'', season:'', default_budget:100000000, participating_teams:[], competition_format:'league', logo_url:'' });
+  const [uploadingLeagueLogo, setUploadingLeagueLogo] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isResettingStats, setIsResettingStats] = useState(false);
   const [generatingKnockout, setGeneratingKnockout] = useState(false);
@@ -588,6 +684,26 @@ export default function AdminPanel() {
       </div>
     );
   }
+
+  const handleLeagueLogoUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploadingLeagueLogo(true);
+    try {
+      const { compressImage } = await import('@/lib/r2Client');
+      const compressed = await compressImage(file, { maxWidth: 300, maxHeight: 300, quality: 0.8 });
+      const fileName = `league-logos/${Date.now()}.jpg`;
+      const { error } = await supabase.storage.from('backgrounds').upload(fileName, compressed, { upsert: true, contentType: 'image/jpeg' });
+      if (error) throw error;
+      const { data: { publicUrl } } = supabase.storage.from('backgrounds').getPublicUrl(fileName);
+      setLeagueFormData(prev => ({ ...prev, logo_url: publicUrl }));
+      toast.success('Logo caricato');
+    } catch (err) {
+      toast.error('Errore upload: ' + err.message);
+    }
+    setUploadingLeagueLogo(false);
+    e.target.value = '';
+  };
 
   const handleCreateLeague = async (e) => {
     e.preventDefault();
@@ -1086,6 +1202,20 @@ export default function AdminPanel() {
           <DialogHeader><DialogTitle>Nuova Lega</DialogTitle></DialogHeader>
           <form onSubmit={handleCreateLeague} className="space-y-4">
             <div className="space-y-2"><Label>Nome Lega *</Label><Input value={leagueFormData.name} onChange={(e) => setLeagueFormData({...leagueFormData, name:e.target.value})} placeholder="Es: Serie A Fantasy" required /></div>
+            <div className="space-y-2">
+              <Label>Logo Competizione</Label>
+              <div className="flex items-center gap-3">
+                {leagueFormData.logo_url && (
+                  <img src={leagueFormData.logo_url} alt="Logo" className="w-12 h-12 rounded-lg object-cover border" />
+                )}
+                <input type="file" accept="image/*" onChange={handleLeagueLogoUpload} className="hidden" id="league-logo-upload" disabled={uploadingLeagueLogo} />
+                <label htmlFor="league-logo-upload" className="flex-1">
+                  <Button type="button" variant="outline" className="w-full cursor-pointer" disabled={uploadingLeagueLogo} asChild>
+                    <span>{uploadingLeagueLogo ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Caricamento...</> : <><Upload className="w-4 h-4 mr-2" />{leagueFormData.logo_url ? 'Cambia logo' : 'Carica logo'}</>}</span>
+                  </Button>
+                </label>
+              </div>
+            </div>
             <div className="space-y-2"><Label>Stagione *</Label><Input value={leagueFormData.season} onChange={(e) => setLeagueFormData({...leagueFormData, season:e.target.value})} placeholder="Es: 2024/2025" required /></div>
             <div className="space-y-2">
               <Label>Formato *</Label>
