@@ -76,7 +76,7 @@ export default function TeamRosterManager() {
       const mediaType = file.type;
 
       // Chiama Claude API con vision
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      const response = await fetch('/api/claude', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
