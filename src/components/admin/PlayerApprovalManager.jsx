@@ -39,6 +39,7 @@ export default function PlayerApprovalManager() {
   const [hasShownNotification, setHasShownNotification] = useState(false);
   const [activeTab, setActiveTab] = useState('pending');
   const [expandedSessions, setExpandedSessions] = useState({});
+  const [expandedDates, setExpandedDates] = useState({});
 
   const queryClient = useQueryClient();
 
@@ -212,8 +213,28 @@ export default function PlayerApprovalManager() {
               const approved = sessionPlayers.filter(p => p.status === 'approved');
               const rejected = sessionPlayers.filter(p => p.status === 'rejected');
               const isExpanded = expandedSessions[session] !== false;
+
+              // raggruppa per data (dd/MM/yyyy), ordinando dalla più recente
+              const byDate = sessionPlayers.reduce((acc, player) => {
+                const dateKey = player.created_date
+                  ? format(new Date(player.created_date), 'dd/MM/yyyy')
+                  : 'Data sconosciuta';
+                if (!acc[dateKey]) acc[dateKey] = [];
+                acc[dateKey].push(player);
+                return acc;
+              }, {});
+
+              const sortedDates = Object.keys(byDate).sort((a, b) => {
+                if (a === 'Data sconosciuta') return 1;
+                if (b === 'Data sconosciuta') return -1;
+                const [da, ma, ya] = a.split('/');
+                const [db, mb, yb] = b.split('/');
+                return new Date(`${yb}-${mb}-${db}`) - new Date(`${ya}-${ma}-${da}`);
+              });
+
               return (
                 <Card key={session} className="overflow-hidden">
+                  {/* Header sessione */}
                   <CardHeader
                     className="pb-3 cursor-pointer hover:bg-slate-50"
                     onClick={() => setExpandedSessions(prev => ({ ...prev, [session]: !isExpanded }))}
@@ -221,6 +242,7 @@ export default function PlayerApprovalManager() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3 flex-wrap">
                         <CardTitle className="text-base">{session}</CardTitle>
+                        <Badge variant="outline" className="text-xs text-slate-500">{sortedDates.length} {sortedDates.length === 1 ? 'giorno' : 'giorni'}</Badge>
                         {pending.length > 0 && <Badge className="bg-amber-100 text-amber-700 text-xs">{pending.length} in attesa</Badge>}
                         {approved.length > 0 && <Badge className="bg-emerald-100 text-emerald-700 text-xs">{approved.length} approvati</Badge>}
                         {rejected.length > 0 && <Badge className="bg-rose-100 text-rose-700 text-xs">{rejected.length} rifiutati</Badge>}
@@ -240,43 +262,91 @@ export default function PlayerApprovalManager() {
                       </div>
                     </div>
                   </CardHeader>
+
+                  {/* Sotto-gruppi per data */}
                   {isExpanded && (
-                    <CardContent className="pt-0 space-y-2">
-                      {sessionPlayers.map(player => (
-                        <div key={player.id} className={`flex items-center justify-between p-3 rounded-lg border ${
-                          player.status === 'pending' ? 'bg-amber-50 border-amber-200' :
-                          player.status === 'approved' ? 'bg-emerald-50 border-emerald-200 opacity-80' :
-                          'bg-rose-50 border-rose-200 opacity-70'
-                        }`}>
-                          <div>
-                            <p className="font-medium text-slate-800">{player.first_name} {player.last_name}</p>
-                            <div className="flex gap-2 mt-0.5 flex-wrap">
-                              <Badge variant="outline" className="text-xs">{player.role}</Badge>
-                              {player.overall_rating && <Badge className="bg-emerald-100 text-emerald-700 text-xs">OVR {player.overall_rating}</Badge>}
-                              {player.created_by && <span className="text-xs text-slate-400">{player.created_by.split('@')[0]}</span>}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {player.status === 'pending' && (
-                              <>
-                                <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => handleApprovePlayer(player.id)}>
-                                  <Check className="w-4 h-4" />
-                                </Button>
-                                <Button size="sm" variant="outline" className="text-rose-600 border-rose-200" onClick={() => handleRejectPlayer(player.id)}>
-                                  <X className="w-4 h-4" />
-                                </Button>
-                              </>
-                            )}
-                            {player.status === 'approved' && <Badge className="bg-emerald-100 text-emerald-700 text-xs">✓ Approvato</Badge>}
-                            {player.status === 'rejected' && (
+                    <CardContent className="pt-0 space-y-3">
+                      {sortedDates.map(dateKey => {
+                        const datePlayers = byDate[dateKey];
+                        const datePending = datePlayers.filter(p => p.status === 'pending');
+                        const dateApproved = datePlayers.filter(p => p.status === 'approved');
+                        const dateRejected = datePlayers.filter(p => p.status === 'rejected');
+                        const dateGroupKey = `${session}__${dateKey}`;
+                        const isDateExpanded = expandedDates[dateGroupKey] !== false;
+
+                        return (
+                          <div key={dateKey} className="border rounded-lg overflow-hidden">
+                            {/* Header data */}
+                            <div
+                              className="flex items-center justify-between px-4 py-2.5 bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
+                              onClick={() => setExpandedDates(prev => ({ ...prev, [dateGroupKey]: !isDateExpanded }))}
+                            >
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                                <span className="text-sm font-semibold text-slate-700">{dateKey}</span>
+                                <span className="text-xs text-slate-400">({datePlayers.length} giocatori)</span>
+                                {datePending.length > 0 && <Badge className="bg-amber-100 text-amber-700 text-xs py-0">{datePending.length} in attesa</Badge>}
+                                {dateApproved.length > 0 && <Badge className="bg-emerald-100 text-emerald-700 text-xs py-0">{dateApproved.length} ✓</Badge>}
+                                {dateRejected.length > 0 && <Badge className="bg-rose-100 text-rose-700 text-xs py-0">{dateRejected.length} ✗</Badge>}
+                              </div>
                               <div className="flex items-center gap-2">
-                                <Badge className="bg-rose-100 text-rose-700 text-xs">✗ Rifiutato</Badge>
-                                <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-xs" onClick={() => handleApprovePlayer(player.id)}>Riapprova</Button>
+                                {datePending.length > 0 && (
+                                  <Button
+                                    size="sm"
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-xs h-7 px-2"
+                                    onClick={(e) => { e.stopPropagation(); handleApproveAllInSession(datePlayers); }}
+                                    disabled={isApproving}
+                                  >
+                                    Approva ({datePending.length})
+                                  </Button>
+                                )}
+                                {isDateExpanded ? <ChevronUp className="w-3.5 h-3.5 text-slate-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
+                              </div>
+                            </div>
+
+                            {/* Righe giocatori */}
+                            {isDateExpanded && (
+                              <div className="divide-y divide-slate-100">
+                                {datePlayers.map(player => (
+                                  <div key={player.id} className={`flex items-center justify-between px-4 py-3 ${
+                                    player.status === 'pending' ? 'bg-amber-50' :
+                                    player.status === 'approved' ? 'bg-emerald-50/60' :
+                                    'bg-rose-50/60'
+                                  }`}>
+                                    <div>
+                                      <p className="font-medium text-slate-800 text-sm">{player.first_name} {player.last_name}</p>
+                                      <div className="flex gap-2 mt-0.5 flex-wrap">
+                                        <Badge variant="outline" className="text-xs">{player.role}</Badge>
+                                        {player.overall_rating && <Badge className="bg-emerald-100 text-emerald-700 text-xs">OVR {player.overall_rating}</Badge>}
+                                        {player.created_by && <span className="text-xs text-slate-400">{player.created_by.split('@')[0]}</span>}
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      {player.status === 'pending' && (
+                                        <>
+                                          <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 h-7 w-7 p-0" onClick={() => handleApprovePlayer(player.id)}>
+                                            <Check className="w-3.5 h-3.5" />
+                                          </Button>
+                                          <Button size="sm" variant="outline" className="text-rose-600 border-rose-200 h-7 w-7 p-0" onClick={() => handleRejectPlayer(player.id)}>
+                                            <X className="w-3.5 h-3.5" />
+                                          </Button>
+                                        </>
+                                      )}
+                                      {player.status === 'approved' && <Badge className="bg-emerald-100 text-emerald-700 text-xs">✓ Approvato</Badge>}
+                                      {player.status === 'rejected' && (
+                                        <div className="flex items-center gap-2">
+                                          <Badge className="bg-rose-100 text-rose-700 text-xs">✗ Rifiutato</Badge>
+                                          <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-xs h-7 px-2" onClick={() => handleApprovePlayer(player.id)}>Riapprova</Button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
                             )}
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </CardContent>
                   )}
                 </Card>
