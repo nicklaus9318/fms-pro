@@ -9,8 +9,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { base44 } from '@/api/base44Client';
 import { supabase } from '@/api/supabaseClient';
 import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/api/supabaseClient';
-import { useQuery } from '@tanstack/react-query';
 import { Loader2, Plus, Trash2, Trophy, Star, Upload, Youtube, Image as ImageIcon, Ambulance, ScanSearch, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -97,8 +95,7 @@ export default function MatchReportForm({ open, onClose, match, homeTeam, awayTe
       const riskyNames = riskyPlayers.map(p => {
         const status = playerStatuses.find(s => s.player_id === p.id);
         return `${p.first_name} ${p.last_name} (${status?.status_type === 'suspended' ? 'SQUALIFICATO' : 'INFORTUNATO'})`;
-      }).join('
-');
+      }).join('\n');
 
       const prompt = `Analizza queste foto di una partita di calcio.
 Cerca nei tabellini, nei nomi sulle maglie, nelle grafiche a schermo, o in qualsiasi testo visibile i seguenti giocatori che NON dovrebbero essere in campo perché squalificati o infortunati:
