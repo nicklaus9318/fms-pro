@@ -216,7 +216,8 @@ export default function Players() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {paginatedPlayers.map(player => (
               <PlayerCard key={player.id} player={player} onClick={isAdmin ? () => handleEdit(player) : undefined}
-                showTeam={true} teamName={getTeamName(player.team_id)} showHistoryButton={true} />
+                showTeam={true} teamName={getTeamName(player.team_id)} showHistoryButton={true}
+                showDeleteButton={isAdmin} />
             ))}
           </div>
         ) : (
@@ -262,7 +263,26 @@ export default function Players() {
                       <td className="p-3 text-sm text-slate-600">{getTeamName(player.team_id)}</td>
                       {isAdmin && (
                         <td className="p-3">
-                          <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleEdit(player); }}>Modifica</Button>
+                          <div className="flex gap-2">
+                            <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleEdit(player); }}>Modifica</Button>
+                            <Button variant="outline" size="sm" className="text-rose-600 border-rose-200 hover:bg-rose-50"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                if (!window.confirm(`Eliminare ${player.first_name} ${player.last_name}?`)) return;
+                                if (!window.confirm('Sei sicuro? Operazione irreversibile.')) return;
+                                try {
+                                  const { supabase } = await import('@/api/supabaseClient');
+                                  await supabase.from('player_statuses').delete().eq('player_id', player.id);
+                                  await supabase.from('sanctions').delete().eq('player_id', player.id);
+                                  const { error } = await supabase.from('players').delete().eq('id', player.id);
+                                  if (error) throw error;
+                                  queryClient.invalidateQueries({ queryKey: ['allPlayers'] });
+                                  toast.success('Giocatore eliminato');
+                                } catch (err) { toast.error('Errore: ' + err.message); }
+                              }}>
+                              Elimina
+                            </Button>
+                          </div>
                         </td>
                       )}
                     </tr>
