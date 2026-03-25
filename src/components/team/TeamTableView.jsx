@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ExternalLink, Trophy, TrendingUp, User } from 'lucide-react';
+import { ExternalLink, Trophy, TrendingUp, User, Trash2 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
+import { supabase } from '@/api/supabaseClient';
+import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { useQuery } from '@tanstack/react-query';
 
 const ROLE_ORDER = {
@@ -37,7 +40,26 @@ const getSofifaFallbackUrl = (sofifaId) => {
   return `https://cdn.futwiz.com/assets/img/fc25/faces/${id}.png`;
 };
 
-export default function TeamTableView({ teamId }) {
+export default function TeamTableView({ teamId, isAdmin = false }) {
+  const queryClient = useQueryClient();
+
+  const handleDeletePlayer = async (player) => {
+    if (!window.confirm(`Eliminare ${player.first_name} ${player.last_name} dalla rosa?`)) return;
+    if (!window.confirm('Sei sicuro? Operazione irreversibile.')) return;
+    try {
+      await supabase.from('player_statuses').delete().eq('player_id', player.id);
+      await supabase.from('sanctions').delete().eq('player_id', player.id);
+      const { error } = await supabase.from('players').delete().eq('id', player.id);
+      if (error) throw error;
+      toast.success(`${player.first_name} ${player.last_name} eliminato`);
+      queryClient.invalidateQueries({ queryKey: ['players', teamId] });
+      queryClient.invalidateQueries({ queryKey: ['players'] });
+      queryClient.invalidateQueries({ queryKey: ['allPlayers'] });
+    } catch (err) {
+      toast.error('Errore: ' + err.message);
+    }
+  };
+
   const { data: players = [] } = useQuery({
     queryKey: ['players', teamId],
     queryFn: () => base44.entities.Player.filter({ team_id: teamId, status: 'approved' })
@@ -111,6 +133,7 @@ export default function TeamTableView({ teamId }) {
                   <th className="px-4 py-3 text-center">Assist</th>
                   <th className="px-4 py-3 text-center">MVP</th>
                   <th className="px-4 py-3">SoFIFA</th>
+                  {isAdmin && <th className="px-4 py-3"></th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -172,6 +195,17 @@ export default function TeamTableView({ teamId }) {
                           <span className="text-xs text-slate-400">N/A</span>
                         )}
                       </td>
+                      {isAdmin && (
+                        <td className="px-4 py-3">
+                          <button
+                            onClick={() => handleDeletePlayer(player)}
+                            className="p-1.5 rounded-lg text-rose-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                            title="Elimina giocatore"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}

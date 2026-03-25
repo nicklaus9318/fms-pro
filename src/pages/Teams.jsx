@@ -263,7 +263,7 @@ export default function Teams() {
         </Card>
 
         <DepartmentAverages players={teamPlayers} />
-        <TeamTableView teamId={selectedTeam.id} />
+        <TeamTableView teamId={selectedTeam.id} isAdmin={isAdmin} />
 
         {/* Form modifica (aperto dall'interno della vista dettaglio) */}
         <Dialog open={showForm} onOpenChange={(open) => { if (!open) { setShowForm(false); setEditingTeam(null); setFormData(EMPTY_FORM); } }}>
