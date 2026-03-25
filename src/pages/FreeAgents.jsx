@@ -138,7 +138,14 @@ export default function FreeAgents() {
         viewMode === 'grid' ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {filteredPlayers.map(player => (
-              <PlayerCard key={player.id} player={player} showTeam={true} teamName="Svincolato" />
+              <PlayerCard
+                key={player.id}
+                player={player}
+                showTeam={true}
+                teamName="Svincolato"
+                showDeleteButton={isAdmin}
+                showHistoryButton={true}
+              />
             ))}
           </div>
         ) : (

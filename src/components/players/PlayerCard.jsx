@@ -1,9 +1,12 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ExternalLink, User, Euro, History } from 'lucide-react';
+import { ExternalLink, User, Euro, History, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '../../utils';
+import { supabase } from '@/api/supabaseClient';
+import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 
 const ROLE_COLORS = {
   'POR': 'bg-yellow-100 text-yellow-800',
@@ -44,7 +47,27 @@ const getSofifaFallbackUrl = (sofifaId) => {
   return `https://cdn.futwiz.com/assets/img/fc25/faces/${id}.png`;
 };
 
-export default function PlayerCard({ player, onClick, showTeam, teamName, showHistoryButton = false }) {
+export default function PlayerCard({ player, onClick, showTeam, teamName, showHistoryButton = false, showDeleteButton = false, onDeleted }) {
+  const queryClient = useQueryClient();
+
+  const handleDelete = async (e) => {
+    e.stopPropagation();
+    if (!window.confirm(`Eliminare ${player.first_name} ${player.last_name}?`)) return;
+    if (!window.confirm('Sei sicuro? L\'operazione non può essere annullata.')) return;
+    try {
+      // Elimina tabelle dipendenti prima
+      await supabase.from('player_statuses').delete().eq('player_id', player.id);
+      await supabase.from('sanctions').delete().eq('player_id', player.id);
+      const { error } = await supabase.from('players').delete().eq('id', player.id);
+      if (error) throw error;
+      toast.success(`${player.first_name} ${player.last_name} eliminato`);
+      queryClient.invalidateQueries({ queryKey: ['players'] });
+      queryClient.invalidateQueries({ queryKey: ['allPlayers'] });
+      if (onDeleted) onDeleted(player.id);
+    } catch (err) {
+      toast.error('Errore eliminazione: ' + err.message);
+    }
+  };
   const formatSalary = (salary) => {
     if (!salary) return '-';
     if (salary >= 1000000) return `€${(salary / 1000000).toFixed(1)}M`;
@@ -144,6 +167,12 @@ export default function PlayerCard({ player, onClick, showTeam, teamName, showHi
                   <Button variant="ghost" size="icon" className="h-7 w-7"
                     onClick={(e) => { e.stopPropagation(); window.open(player.sofifa_link, '_blank'); }}>
                     <ExternalLink className="w-3 h-3" />
+                  </Button>
+                )}
+                {showDeleteButton && (
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-rose-500 hover:text-rose-700 hover:bg-rose-50"
+                    onClick={handleDelete}>
+                    <Trash2 className="w-3 h-3" />
                   </Button>
                 )}
               </div>
