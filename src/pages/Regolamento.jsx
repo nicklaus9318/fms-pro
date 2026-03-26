@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { supabase } from '@/api/supabaseClient';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { BookOpen, Download, Upload, FileText, Info, Loader2 } from 'lucide-react';
@@ -36,15 +35,18 @@ export default function Regolamento() {
 
     setUploading(true);
     try {
-      const fileName = `regolamento/regolamento_${Date.now()}.pdf`;
-      const { error } = await supabase.storage
-        .from('backgrounds')
-        .upload(fileName, file, { upsert: true, contentType: 'application/pdf' });
-      if (error) throw error;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('backgrounds')
-        .getPublicUrl(fileName);
+      // Upload su R2 tramite api/upload
+      const formPayload = new FormData();
+      formPayload.append('file', file);
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formPayload,
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Errore upload');
+      }
+      const { url: publicUrl } = await res.json();
 
       // Salva URL in app_settings
       const existingUrl = appSettings.find(s => s.key === 'regolamento_url');
