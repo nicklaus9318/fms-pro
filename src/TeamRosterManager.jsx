@@ -35,23 +35,34 @@ export default function TeamRosterManager() {
     reader.readAsDataURL(file);
   });
 
-  // Confronta nome estratto con giocatori esistenti
-  const findMatches = (extractedName) => {
+  // Confronta nome estratto con giocatori esistenti (priorità id_sofifa, poi nome)
+  const findMatches = (extractedName, extractedSofifaId = null) => {
     const name = extractedName.toLowerCase().trim();
     const nameParts = name.split(/\s+/);
 
+    // 1. Match per id_sofifa (più affidabile)
+    const sofifaMatch = extractedSofifaId
+      ? allPlayers.find(p => p.id_sofifa && String(p.id_sofifa).trim() === String(extractedSofifaId).trim())
+      : null;
+
+    if (sofifaMatch) {
+      return { exact: sofifaMatch, fuzzy: [], matchedBy: 'sofifa' };
+    }
+
+    // 2. Match per nome esatto
     const exact = allPlayers.find(p => {
       const fullName = `${p.first_name} ${p.last_name}`.toLowerCase();
       return fullName === name;
     });
 
+    // 3. Match fuzzy per nome simile
     const fuzzy = allPlayers.filter(p => {
       const fullName = `${p.first_name} ${p.last_name}`.toLowerCase();
       if (fullName === name) return false;
       return nameParts.some(part => part.length > 2 && fullName.includes(part));
     }).slice(0, 3);
 
-    return { exact, fuzzy };
+    return { exact, fuzzy, matchedBy: exact ? 'name' : 'fuzzy' };
   };
 
   const handleFileUpload = async (e) => {
@@ -120,13 +131,19 @@ Rispondi SOLO con un array JSON valido, nessun testo aggiuntivo. Esempio:
       const extractedPlayers = JSON.parse(jsonMatch[0]);
       if (!extractedPlayers.length) throw new Error('Nessun giocatore riconosciuto');
 
-      // Confronta con giocatori esistenti
+      // Confronta con giocatori esistenti (usa id_sofifa se disponibile)
       const matchCandidates = extractedPlayers.map(player => {
-        const { exact, fuzzy } = findMatches(`${player.first_name} ${player.last_name}`);
-        return { extracted: player, exact_match: exact || null, fuzzy_matches: fuzzy };
+        const { exact, fuzzy, matchedBy } = findMatches(
+          `${player.first_name} ${player.last_name}`,
+          player.id_sofifa || null
+        );
+        return { extracted: player, exact_match: exact || null, fuzzy_matches: fuzzy, matchedBy };
       });
 
       // Inizializza decisioni
+      // - exact_match senza squadra → approve (sposta alla squadra)
+      // - exact_match con squadra diversa → approve (trasferisci)
+      // - nessun match → create
       const initialDecisions = {};
       matchCandidates.forEach((candidate, idx) => {
         if (candidate.exact_match) {
@@ -337,7 +354,17 @@ Rispondi SOLO con un array JSON valido, nessun testo aggiuntivo. Esempio:
                           >
                             <div className="flex items-center justify-between">
                               <div>
-                                <Badge className="bg-emerald-100 text-emerald-700 mb-1">✓ Corrispondenza esatta</Badge>
+                                <div className="flex gap-1 flex-wrap mb-1">
+                                  <Badge className="bg-emerald-100 text-emerald-700">
+                                    {candidate.matchedBy === 'sofifa' ? '✓ Match SoFIFA ID' : '✓ Corrispondenza esatta'}
+                                  </Badge>
+                                  {!exact_match.team_id
+                                    ? <Badge className="bg-blue-100 text-blue-700">Svincolato → verrà assegnato</Badge>
+                                    : exact_match.team_id === previewData.team_id
+                                    ? <Badge className="bg-slate-100 text-slate-600">Già in questa squadra</Badge>
+                                    : <Badge className="bg-amber-100 text-amber-700">In altra squadra → verrà trasferito</Badge>
+                                  }
+                                </div>
                                 <p className="font-semibold">{exact_match.first_name} {exact_match.last_name}</p>
                                 <p className="text-xs text-slate-500">
                                   {exact_match.age && `Età: ${exact_match.age}`}
