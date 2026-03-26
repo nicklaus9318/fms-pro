@@ -247,13 +247,26 @@ Se non trovi nessun giocatore a rischio, rispondi con found: [].`;
     }
 
     setUploadingPhoto(true);
+    const newPhotos = [];
     try {
-      const uploadPromises = files.map(file => base44.integrations.Core.UploadFile({ file }));
-      const results = await Promise.all(uploadPromises);
-      const newPhotos = results.map(r => r.file_url);
-      setFormData({ ...formData, photos: [...formData.photos, ...newPhotos] });
+      for (const file of files) {
+        const formPayload = new FormData();
+        formPayload.append('file', file);
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          body: formPayload,
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || 'Errore upload');
+        }
+        const data = await res.json();
+        newPhotos.push(data.url);
+      }
+      setFormData(prev => ({ ...prev, photos: [...prev.photos, ...newPhotos] }));
+      toast.success(`${newPhotos.length} foto caricate`);
     } catch (error) {
-      toast.error('Errore durante il caricamento delle foto');
+      toast.error('Errore caricamento foto: ' + error.message);
     }
     setUploadingPhoto(false);
   };
