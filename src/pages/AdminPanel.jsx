@@ -18,7 +18,6 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from 'sonner';
 import PlayerApprovalManager from '../components/admin/PlayerApprovalManager';
-import TeamRosterManager from '../components/admin/TeamRosterManager';
 
 // ─── CSV parser ───────────────────────────────────────────────────────────────
 function parseCSV(text) {
@@ -824,7 +823,6 @@ export default function AdminPanel() {
             {pendingPlayers.length > 0 && <Badge className="bg-amber-100 text-amber-700">{pendingPlayers.length}</Badge>}
           </TabsTrigger>
           <TabsTrigger value="import" className="flex items-center gap-2"><FileSpreadsheet className="w-4 h-4" />Importa Database</TabsTrigger>
-          <TabsTrigger value="team_rosters" className="flex items-center gap-2"><Upload className="w-4 h-4" />Rose Squadre</TabsTrigger>
           <TabsTrigger value="leagues" className="flex items-center gap-2"><Trophy className="w-4 h-4" />Leghe</TabsTrigger>
           <TabsTrigger value="reset" className="flex items-center gap-2"><Trash2 className="w-4 h-4" />Reset</TabsTrigger>
           <TabsTrigger value="duplicates" className="flex items-center gap-2"><Users className="w-4 h-4" />Doppioni</TabsTrigger>
@@ -846,9 +844,6 @@ export default function AdminPanel() {
 
         {/* ── Approval ── */}
         <TabsContent value="approval"><PlayerApprovalManager /></TabsContent>
-
-        {/* ── Rosters ── */}
-        <TabsContent value="team_rosters"><TeamRosterManager /></TabsContent>
 
         {/* ── Reset ── */}
         <TabsContent value="reset" className="space-y-4">
