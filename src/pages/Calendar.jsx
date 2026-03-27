@@ -110,7 +110,9 @@ export default function Calendar() {
       const imageContents = [];
       for (const photoUrl of match.photos.slice(0, 4)) {
         try {
-          const res = await fetch(photoUrl);
+          // Usa proxy per evitare CORS con R2
+          const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(photoUrl)}`;
+          const res = await fetch(proxyUrl);
           const blob = await res.blob();
           const base64 = await new Promise((resolve) => {
             const reader = new FileReader();

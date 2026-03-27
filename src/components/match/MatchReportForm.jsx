@@ -72,7 +72,8 @@ export default function MatchReportForm({ open, onClose, match, homeTeam, awayTe
       const imageContents = [];
       for (const photoUrl of formData.photos.slice(0, 4)) { // max 4 foto per non sforare token
         try {
-          const res = await fetch(photoUrl);
+          const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(photoUrl)}`;
+          const res = await fetch(proxyUrl);
           const blob = await res.blob();
           const base64 = await new Promise((resolve) => {
             const reader = new FileReader();
