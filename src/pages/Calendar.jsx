@@ -429,6 +429,64 @@ export default function Calendar() {
 
       await Promise.all(operations);
 
+      // === SCADENZA SQUALIFICHE/INFORTUNI ===
+      // Per ogni giocatore delle due squadre, se ha uno status attivo
+      // e questa è la giornata in cui scade (suspension_start_matchday <= currentMatchday),
+      // decrementa matchdays_remaining e rimuovi se arriva a 0
+      if (isFirstSave) {
+        const allTeamPlayerIds = allMatchPlayers.map(p => p.id);
+        const activeStatuses = playerStatuses.filter(s =>
+          allTeamPlayerIds.includes(s.player_id) &&
+          s.suspension_start_matchday != null &&
+          s.suspension_start_matchday <= currentMatchday
+        );
+        for (const status of activeStatuses) {
+          const newRemaining = (status.matchdays_remaining || 1) - 1;
+          if (newRemaining <= 0) {
+            await base44.entities.PlayerStatus.delete(status.id);
+            // Rimuovi anche player_status sul giocatore se infortunato
+            if (status.status_type === 'injured') {
+              await base44.entities.Player.update(status.player_id, { player_status: null });
+            }
+          } else {
+            await base44.entities.PlayerStatus.update(status.id, { matchdays_remaining: newRemaining });
+          }
+        }
+      }
+
+      // === PREMI BUDGET ===
+      // Solo al primo salvataggio del report (non alle modifiche)
+      if (isFirstSave) {
+        const PRIZE_BASE = 3000000;   // 3M a entrambe le squadre
+        const PRIZE_WIN  = 1000000;   // +1M a chi vince
+        const PRIZE_DRAW = 500000;    // +500K in caso di pareggio
+
+        const homePrize = PRIZE_BASE + (homeScore > awayScore ? PRIZE_WIN : homeScore === awayScore ? PRIZE_DRAW : 0);
+        const awayPrize = PRIZE_BASE + (awayScore > homeScore ? PRIZE_WIN : homeScore === awayScore ? PRIZE_DRAW : 0);
+
+        // Aggiorna budget casa
+        const newHomeBudget = (homeTeam.budget || 0) + homePrize;
+        await base44.entities.Team.update(homeTeam.id, { budget: newHomeBudget });
+        await base44.entities.BudgetTransaction.create({
+          team_id: homeTeam.id, team_name: homeTeam.name,
+          amount: homePrize, type: 'match_prize',
+          description: `Premio partita G${currentMatchday} vs ${awayTeam.name} (${homeScore}-${awayScore})`,
+          previous_balance: homeTeam.budget || 0, new_balance: newHomeBudget,
+          league_id: selectedMatch.league_id
+        });
+
+        // Aggiorna budget ospite
+        const newAwayBudget = (awayTeam.budget || 0) + awayPrize;
+        await base44.entities.Team.update(awayTeam.id, { budget: newAwayBudget });
+        await base44.entities.BudgetTransaction.create({
+          team_id: awayTeam.id, team_name: awayTeam.name,
+          amount: awayPrize, type: 'match_prize',
+          description: `Premio partita G${currentMatchday} vs ${homeTeam.name} (${awayScore}-${homeScore})`,
+          previous_balance: awayTeam.budget || 0, new_balance: newAwayBudget,
+          league_id: selectedMatch.league_id
+        });
+      }
+
       queryClient.invalidateQueries({ queryKey: ['matches'] });
       queryClient.invalidateQueries({ queryKey: ['players'] });
       queryClient.invalidateQueries({ queryKey: ['teams'] });
