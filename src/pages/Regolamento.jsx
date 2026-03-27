@@ -72,13 +72,24 @@ export default function Regolamento() {
     e.target.value = '';
   };
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (!regolamentoUrl) return;
-    const a = document.createElement('a');
-    a.href = regolamentoUrl;
-    a.download = regolamentoName;
-    a.target = '_blank';
-    a.click();
+    try {
+      // Scarica tramite proxy per forzare Content-Disposition: attachment
+      const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(regolamentoUrl)}&download=1`;
+      const res = await fetch(proxyUrl);
+      if (!res.ok) throw new Error('Download fallito');
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = regolamentoName;
+      a.click();
+      URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      // Fallback: apri direttamente in nuova tab
+      window.open(regolamentoUrl, '_blank');
+    }
   };
 
   return (

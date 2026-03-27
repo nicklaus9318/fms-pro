@@ -12,7 +12,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Loader2, Plus, Trash2, Trophy, Star, Upload, Youtube, Image as ImageIcon, Ambulance, ScanSearch, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
 
-export default function MatchReportForm({ open, onClose, match, homeTeam, awayTeam, homePlayers, awayPlayers, onSubmit, readOnly = false }) {
+export default function MatchReportForm({ open, onClose, match, homeTeam, awayTeam, homePlayers, awayPlayers, onSubmit, readOnly = false, isController = false }) {
   const [formData, setFormData] = useState({
     home_score: match?.home_score || 0,
     away_score: match?.away_score || 0,
@@ -809,7 +809,7 @@ Se non trovi nessun giocatore a rischio, rispondi con found: [].`;
                     {uploadingPhoto && <Loader2 className="w-4 h-4 animate-spin" />}
                   </div>
                 )}
-                {formData.photos.length > 0 && !readOnly && (
+                {formData.photos.length > 0 && (!readOnly || isController) && (
                   <Button
                     type="button"
                     variant="outline"

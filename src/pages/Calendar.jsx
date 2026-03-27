@@ -70,6 +70,7 @@ export default function Calendar() {
   }, []);
 
   const isAdmin = user?.role === 'admin';
+  const isController = user?.role === 'controller' || user?.role === 'controllore';
 
   const { data: leagues = [] } = useQuery({ queryKey: ['leagues'], queryFn: () => base44.entities.League.list() });
   const { data: competitions = [] } = useQuery({ queryKey: ['competitions'], queryFn: () => base44.entities.Competition.list() });
@@ -673,6 +674,7 @@ export default function Calendar() {
           awayPlayers={getTeamPlayers(selectedMatch.away_team_id)}
           onSubmit={handleReportSubmit}
           readOnly={selectedMatch.status === 'completed' && !isAdmin}
+          isController={isController}
         />
       )}
 
@@ -744,7 +746,7 @@ export default function Calendar() {
                         <img key={idx} src={photo} alt="" className="w-full h-20 object-cover rounded-lg" />
                       ))}
                     </div>
-                    {isAdmin && (
+                    {(isAdmin || isController) && (
                       <Button
                         type="button"
                         variant="outline"
