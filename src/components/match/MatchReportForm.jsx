@@ -70,10 +70,14 @@ export default function MatchReportForm({ open, onClose, match, homeTeam, awayTe
     try {
       // Converti le foto in base64
       const imageContents = [];
-      for (const photoUrl of formData.photos.slice(0, 4)) { // max 4 foto per non sforare token
-        try {
-          const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(photoUrl)}`;
-          const res = await fetch(proxyUrl);
+      const hasPhotos = formData.photos.length > 0;
+
+      if (hasPhotos) {
+        // Usa le foto caricate (max 10)
+        for (const photoUrl of formData.photos.slice(0, 10)) {
+          try {
+            const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(photoUrl)}`;
+            const res = await fetch(proxyUrl);
           const blob = await res.blob();
           const base64 = await new Promise((resolve) => {
             const reader = new FileReader();
@@ -82,13 +86,29 @@ export default function MatchReportForm({ open, onClose, match, homeTeam, awayTe
           });
           const mediaType = blob.type || 'image/jpeg';
           imageContents.push({ type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } });
-        } catch (e) {
-          console.warn('Impossibile caricare foto:', photoUrl, e.message);
+          } catch (e) {
+            console.warn('Impossibile caricare foto:', photoUrl, e.message);
+          }
+        }
+      } else if (formData.stream_link) {
+        // Nessuna foto — usa thumbnail YouTube
+        const ytMatch = formData.stream_link.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+        if (ytMatch) {
+          try {
+            const res = await fetch(`https://img.youtube.com/vi/${ytMatch[1]}/maxresdefault.jpg`);
+            const blob = await res.blob();
+            const base64 = await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result.split(',')[1]);
+              reader.readAsDataURL(blob);
+            });
+            imageContents.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: base64 } });
+          } catch (e) { console.warn('Thumbnail YouTube non caricabile'); }
         }
       }
 
       if (imageContents.length === 0) {
-        toast.error('Impossibile leggere le foto. Verifica che siano accessibili.');
+        toast.error('Nessuna foto o thumbnail disponibile per l'analisi.');
         setAnalyzingPhotos(false);
         return;
       }

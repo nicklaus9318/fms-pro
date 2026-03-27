@@ -108,21 +108,41 @@ export default function Calendar() {
     setMatchPhotoWarnings([]);
     try {
       const imageContents = [];
-      for (const photoUrl of match.photos.slice(0, 4)) {
-        try {
-          // Usa proxy per evitare CORS con R2
-          const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(photoUrl)}`;
-          const res = await fetch(proxyUrl);
-          const blob = await res.blob();
-          const base64 = await new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result.split(',')[1]);
-            reader.readAsDataURL(blob);
-          });
-          imageContents.push({ type: 'image', source: { type: 'base64', media_type: blob.type || 'image/jpeg', data: base64 } });
-        } catch (e) { console.warn('Foto non caricabile:', photoUrl); }
+      const hasPhotos = match.photos?.length > 0;
+
+      if (hasPhotos) {
+        // Usa le foto caricate (max 10)
+        for (const photoUrl of match.photos.slice(0, 10)) {
+          try {
+            const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(photoUrl)}`;
+            const res = await fetch(proxyUrl);
+            const blob = await res.blob();
+            const base64 = await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result.split(',')[1]);
+              reader.readAsDataURL(blob);
+            });
+            imageContents.push({ type: 'image', source: { type: 'base64', media_type: blob.type || 'image/jpeg', data: base64 } });
+          } catch (e) { console.warn('Foto non caricabile:', photoUrl); }
+        }
+      } else if (match.stream_link) {
+        // Nessuna foto — usa thumbnail YouTube
+        const ytMatch = match.stream_link.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+        if (ytMatch) {
+          const videoId = ytMatch[1];
+          try {
+            const res = await fetch(`https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`);
+            const blob = await res.blob();
+            const base64 = await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result.split(',')[1]);
+              reader.readAsDataURL(blob);
+            });
+            imageContents.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: base64 } });
+          } catch (e) { console.warn('Thumbnail YouTube non caricabile'); }
+        }
       }
-      if (!imageContents.length) { toast.error('Impossibile leggere le foto'); setAnalyzingMatchPhotos(false); return; }
+      if (!imageContents.length) { toast.error('Nessuna foto o thumbnail disponibile'); setAnalyzingMatchPhotos(false); return; }
 
       const riskyNames = riskyPlayers.map(p => {
         const s = playerStatuses.find(s => s.player_id === p.id);
