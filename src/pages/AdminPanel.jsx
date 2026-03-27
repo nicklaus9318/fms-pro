@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import {
   Upload, FileSpreadsheet, Trophy, Users, Loader2, Plus, Settings,
-  AlertCircle, Trash2, CheckCircle, RefreshCw, FileUp, Info, TrendingUp, Gavel, ShoppingBag, Lock, Unlock, Clock,
+  AlertCircle, Trash2, CheckCircle, RefreshCw, FileUp, Info, TrendingUp, Gavel, ShoppingBag, Lock, Unlock, Clock, Ticket, Minus,
 } from 'lucide-react';
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from 'sonner';
@@ -637,6 +637,132 @@ function ResetCard({ color, title, description, items, confirmText, doubleConfir
   );
 }
 
+
+// ─── GettoniManager ──────────────────────────────────────────────────────────
+function GettoniManager({ teams }) {
+  const queryClient = useQueryClient();
+  const [saving, setSaving] = useState({});
+
+  const { data: appSettings = [], refetch } = useQuery({
+    queryKey: ['appSettings'],
+    queryFn: () => base44.entities.AppSettings.list()
+  });
+
+  const getGettoni = (teamId) => {
+    const setting = appSettings.find(s => s.key === `gettoni_${teamId}`);
+    return setting ? parseInt(setting.value) || 0 : 5;
+  };
+
+  const updateGettoni = async (teamId, teamName, delta) => {
+    const current = getGettoni(teamId);
+    const newVal = Math.max(0, current + delta);
+    setSaving(prev => ({ ...prev, [teamId]: true }));
+    try {
+      const existing = appSettings.find(s => s.key === `gettoni_${teamId}`);
+      if (existing) {
+        await base44.entities.AppSettings.update(existing.id, { value: String(newVal) });
+      } else {
+        await base44.entities.AppSettings.create({ key: `gettoni_${teamId}`, value: String(newVal) });
+      }
+      await refetch();
+      queryClient.invalidateQueries({ queryKey: ['appSettings'] });
+    } catch (e) {
+      toast.error('Errore: ' + e.message);
+    }
+    setSaving(prev => ({ ...prev, [teamId]: false }));
+  };
+
+  const resetAllGettoni = async () => {
+    if (!window.confirm('Ripristinare 5 gettoni a tutte le squadre?')) return;
+    for (const team of teams) {
+      const existing = appSettings.find(s => s.key === `gettoni_${team.id}`);
+      if (existing) {
+        await base44.entities.AppSettings.update(existing.id, { value: '5' });
+      } else {
+        await base44.entities.AppSettings.create({ key: `gettoni_${team.id}`, value: '5' });
+      }
+    }
+    await refetch();
+    toast.success('Gettoni ripristinati a 5 per tutte le squadre');
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card className="border-blue-200 bg-blue-50">
+        <CardContent className="pt-4">
+          <div className="flex items-start gap-3">
+            <Info className="w-5 h-5 text-blue-500 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-blue-800">Gettoni Rinvii</p>
+              <p className="text-xs text-blue-600 mt-0.5">Ogni squadra ha 5 gettoni. Scalali quando una squadra richiede un rinvio.</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="flex justify-end">
+        <Button variant="outline" size="sm" onClick={resetAllGettoni}>
+          <RefreshCw className="w-4 h-4 mr-2" />Ripristina tutti a 5
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {teams.map(team => {
+          const gettoni = getGettoni(team.id);
+          const isSaving = saving[team.id];
+          return (
+            <Card key={team.id} className="overflow-hidden">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    {team.logo_url
+                      ? <img src={team.logo_url} alt={team.name} className="w-10 h-10 rounded-lg object-cover" />
+                      : <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: team.primary_color || '#10B981' }}>
+                          <span className="text-white font-bold">{team.name?.charAt(0)}</span>
+                        </div>
+                    }
+                    <div>
+                      <p className="font-semibold text-slate-800 text-sm">{team.name}</p>
+                      <div className="flex gap-1 mt-1">
+                        {[...Array(5)].map((_, i) => (
+                          <div key={i} className={`w-4 h-4 rounded-full ${i < gettoni ? 'bg-emerald-500' : 'bg-slate-200'}`} />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-8 h-8 p-0 text-rose-600 border-rose-200 hover:bg-rose-50"
+                      onClick={() => updateGettoni(team.id, team.name, -1)}
+                      disabled={isSaving || gettoni <= 0}
+                    >
+                      {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Minus className="w-3 h-3" />}
+                    </Button>
+                    <span className={`text-2xl font-bold w-8 text-center ${gettoni === 0 ? 'text-rose-600' : gettoni <= 2 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                      {gettoni}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-8 h-8 p-0 text-emerald-600 border-emerald-200 hover:bg-emerald-50"
+                      onClick={() => updateGettoni(team.id, team.name, +1)}
+                      disabled={isSaving || gettoni >= 5}
+                    >
+                      {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── AdminPanel ───────────────────────────────────────────────────────────────
 export default function AdminPanel() {
   const [user, setUser] = useState(null);
@@ -828,6 +954,7 @@ export default function AdminPanel() {
           <TabsTrigger value="duplicates" className="flex items-center gap-2"><Users className="w-4 h-4" />Doppioni</TabsTrigger>
           <TabsTrigger value="values" className="flex items-center gap-2"><TrendingUp className="w-4 h-4" />Valori</TabsTrigger>
           <TabsTrigger value="mercato" className="flex items-center gap-2"><ShoppingBag className="w-4 h-4" />Mercato</TabsTrigger>
+          <TabsTrigger value="gettoni" className="flex items-center gap-2"><Ticket className="w-4 h-4" />Gettoni</TabsTrigger>
         </TabsList>
 
         {/* ── Import ── */}
@@ -1378,6 +1505,11 @@ export default function AdminPanel() {
         {/* ── MERCATO ── */}
         <TabsContent value="mercato" className="space-y-6">
           <MercatoManager />
+        </TabsContent>
+
+        {/* ── Gettoni ── */}
+        <TabsContent value="gettoni" className="space-y-6">
+          <GettoniManager teams={teams} />
         </TabsContent>
       </Tabs>
 
