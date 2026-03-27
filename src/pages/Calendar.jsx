@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Calendar as CalendarIcon, Trophy, Play, ChevronLeft, ChevronRight, FileEdit, Image, Youtube } from 'lucide-react';
+import { Calendar as CalendarIcon, Trophy, Play, ChevronLeft, ChevronRight, FileEdit, Image, Youtube, ScanSearch, AlertTriangle } from 'lucide-react';
 import { FORMAT_GENERATORS, FORMAT_LABELS } from '@/lib/CompetitionGenerator';
 import MatchReportForm from '@/components/match/MatchReportForm';
 import StandingsTable from '@/components/competition/StandingsTable';
@@ -58,6 +58,8 @@ export default function Calendar() {
   const [showMatchDetails, setShowMatchDetails] = useState(false);
   const [selectedFormat, setSelectedFormat] = useState('classic');
   const [showFormatDialog, setShowFormatDialog] = useState(false);
+  const [analyzingMatchPhotos, setAnalyzingMatchPhotos] = useState(false);
+  const [matchPhotoWarnings, setMatchPhotoWarnings] = useState([]);
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -92,6 +94,64 @@ export default function Calendar() {
     mutationFn: (data) => base44.entities.Match.bulkCreate(data),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['matches'] }); toast.success('Calendario generato con successo'); }
   });
+
+  const analyzeMatchPhotosAI = async (match) => {
+    if (!match.photos?.length) { toast.error('Nessuna foto disponibile'); return; }
+
+    // Giocatori squalificati/infortunati
+    const riskyPlayers = players.filter(p =>
+      playerStatuses.some(s => s.player_id === p.id && ['suspended', 'injured'].includes(s.status_type))
+    );
+    if (riskyPlayers.length === 0) { toast.info('Nessun giocatore squalificato/infortunato al momento'); return; }
+
+    setAnalyzingMatchPhotos(true);
+    setMatchPhotoWarnings([]);
+    try {
+      const imageContents = [];
+      for (const photoUrl of match.photos.slice(0, 4)) {
+        try {
+          const res = await fetch(photoUrl);
+          const blob = await res.blob();
+          const base64 = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result.split(',')[1]);
+            reader.readAsDataURL(blob);
+          });
+          imageContents.push({ type: 'image', source: { type: 'base64', media_type: blob.type || 'image/jpeg', data: base64 } });
+        } catch (e) { console.warn('Foto non caricabile:', photoUrl); }
+      }
+      if (!imageContents.length) { toast.error('Impossibile leggere le foto'); setAnalyzingMatchPhotos(false); return; }
+
+      const riskyNames = riskyPlayers.map(p => {
+        const s = playerStatuses.find(s => s.player_id === p.id);
+        return `${p.first_name} ${p.last_name} (${s?.status_type === 'suspended' ? 'SQUALIFICATO' : 'INFORTUNATO'})`;
+      }).join('\n');
+
+      const response = await fetch('/api/claude', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-opus-4-5',
+          max_tokens: 1000,
+          messages: [{ role: 'user', content: [
+            ...imageContents,
+            { type: 'text', text: `Analizza queste foto di una partita. Cerca nei tabellini, maglie o grafiche i seguenti giocatori NON dovrebbero essere in campo:\n${riskyNames}\n\nRispondi SOLO in JSON: {"found":[{"name":"...","reason":"squalificato o infortunato","confidence":"high/medium/low","detail":"..."}],"message":"..."}` }
+          ]}]
+        })
+      });
+      const data = await response.json();
+      const text = data.content?.[0]?.text || '';
+      const parsed = JSON.parse(text.replace(/\`\`\`json|\`\`\`/g, '').trim());
+      if (parsed.found?.length > 0) {
+        setMatchPhotoWarnings(parsed.found);
+        toast.warning(`⚠️ ${parsed.found.length} giocatore/i a rischio rilevato/i!`);
+      } else {
+        setMatchPhotoWarnings([]);
+        toast.success('✅ Nessun giocatore squalificato/infortunato rilevato');
+      }
+    } catch (e) { toast.error('Errore analisi: ' + e.message); }
+    setAnalyzingMatchPhotos(false);
+  };
 
   const handleGenerateCalendar = async () => {
     const currentLeague = leagues.find(l => l.id === selectedLeague);
@@ -536,7 +596,7 @@ export default function Calendar() {
         />
       )}
 
-      <Dialog open={showMatchDetails} onOpenChange={setShowMatchDetails}>
+      <Dialog open={showMatchDetails} onOpenChange={(open) => { setShowMatchDetails(open); if (!open) setMatchPhotoWarnings([]); }}>
         <DialogContent className="sm:max-w-lg">
           {selectedMatch && (
             <>
@@ -604,6 +664,35 @@ export default function Calendar() {
                         <img key={idx} src={photo} alt="" className="w-full h-20 object-cover rounded-lg" />
                       ))}
                     </div>
+                    {isAdmin && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="w-full mt-2 border-amber-300 text-amber-700 hover:bg-amber-50"
+                        onClick={() => analyzeMatchPhotosAI(selectedMatch)}
+                        disabled={analyzingMatchPhotos}
+                      >
+                        {analyzingMatchPhotos
+                          ? <><span className="animate-spin mr-2">⏳</span>Analisi AI in corso...</>
+                          : <><ScanSearch className="w-4 h-4 mr-2" />Analizza foto — rileva squalificati/infortunati</>
+                        }
+                      </Button>
+                    )}
+                    {matchPhotoWarnings.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {matchPhotoWarnings.map((w, i) => (
+                          <div key={i} className={`flex items-start gap-2 p-2 rounded-lg text-xs ${w.reason === 'squalificato' ? 'bg-red-50 border border-red-200' : 'bg-orange-50 border border-orange-200'}`}>
+                            <AlertTriangle className={`w-3 h-3 mt-0.5 shrink-0 ${w.reason === 'squalificato' ? 'text-red-500' : 'text-orange-500'}`} />
+                            <div>
+                              <span className="font-semibold">{w.name}</span>
+                              <span className={`ml-1 px-1 rounded text-xs ${w.reason === 'squalificato' ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>{w.reason?.toUpperCase()}</span>
+                              {w.detail && <p className="text-slate-500 mt-0.5">{w.detail}</p>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
                 {selectedMatch.stream_link && (
