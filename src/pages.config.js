@@ -21,7 +21,6 @@ const Market             = lazy(() => import('./pages/Market'));
 const PlayerHistory      = lazy(() => import('./pages/PlayerHistory'));
 const Players            = lazy(() => import('./pages/Players'));
 const Profile            = lazy(() => import('./pages/Profile'));
-const Regolamento        = lazy(() => import('./pages/Regolamento'));
 const SimpleDashboard    = lazy(() => import('./pages/SimpleDashboard'));
 const SportsJustice      = lazy(() => import('./pages/SportsJustice'));
 const StoricoMercato     = lazy(() => import('./pages/StoricoMercato'));
@@ -48,7 +47,6 @@ export const PAGES = {
     "PlayerHistory":      PlayerHistory,
     "Players":            Players,
     "Profile":            Profile,
-    "Regolamento":        Regolamento,
     "StoricoMercato":     StoricoMercato,
     "SimpleDashboard":    SimpleDashboard,
     "SportsJustice":      SportsJustice,

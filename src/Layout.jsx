@@ -17,8 +17,7 @@ import {
         Shield,
         UserCircle,
         ChevronDown,
-        Gavel,
-        BookOpen
+        Gavel
       } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import {
@@ -59,7 +58,6 @@ export default function Layout({ children, currentPageName }) {
     { name: 'Competizioni', href: createPageUrl('Calendar'), icon: Calendar, page: 'Calendar' },
     { name: 'Classifiche', href: createPageUrl('GlobalStats'), icon: Trophy, page: 'GlobalStats' },
     { name: 'Albo d\'Oro', href: createPageUrl('HallOfFame'), icon: Trophy, page: 'HallOfFame' },
-    { name: 'Regolamento', href: createPageUrl('Regolamento'), icon: BookOpen, page: 'Regolamento' },
     { name: 'Storico Mercato', href: createPageUrl('StoricoMercato'), icon: TrendingUp, page: 'StoricoMercato' },
   ];
 
