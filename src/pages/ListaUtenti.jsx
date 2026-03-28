@@ -5,7 +5,8 @@ import { supabase } from '@/api/supabaseClient';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Users, Search, MessageCircle, Phone } from 'lucide-react';
+import { Users, Search, MessageCircle, Phone, Shield } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from 'sonner';
 
 export default function ListaUtenti() {
@@ -55,6 +56,21 @@ export default function ListaUtenti() {
     onError: (e) => {
       toast.error('Errore aggiornamento: ' + e.message);
     }
+  });
+
+  const updateRoleMutation = useMutation({
+    mutationFn: async ({ email, role }) => {
+      const { error } = await supabase
+        .from('user_roles')
+        .update({ role })
+        .eq('email', email);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast.success('Ruolo aggiornato');
+    },
+    onError: (e) => toast.error('Errore aggiornamento ruolo: ' + e.message)
   });
 
   // Mappa email → user
@@ -175,6 +191,33 @@ export default function ListaUtenti() {
                           ⚠️ Utente non registrato nel sistema
                         </p>
                       )}
+                    </div>
+                  )}
+
+                  {/* Gestione ruolo — solo admin */}
+                  {isAdmin && user && (
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-slate-600 flex items-center gap-1">
+                        <Shield className="w-3 h-3" />
+                        Ruolo
+                      </label>
+                      <Select
+                        value={user.role || 'user'}
+                        onValueChange={(newRole) => {
+                          if (team.owner_email) {
+                            updateRoleMutation.mutate({ email: team.owner_email, role: newRole });
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="user">👤 User</SelectItem>
+                          <SelectItem value="admin">🔐 Admin</SelectItem>
+                          <SelectItem value="controller">🔍 Controllore</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   )}
 
