@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
+import { supabase } from '@/api/supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -157,14 +158,123 @@ export default function GestioneAste() {
   const closeAuctionMutation = useMutation({
     mutationFn: async (auctionId) => {
       setClosingAuction(auctionId);
-      const result = await base44.functions.invoke('closeSealedBidAuction', { auction_id: auctionId });
-      return result.data;
+
+      // 1. Recupera l'asta
+      const auction = auctions.find(a => a.id === auctionId);
+      if (!auction) throw new Error('Asta non trovata');
+
+      // 2. Recupera tutte le offerte attive ordinate per importo decrescente
+      const { data: auctionBids } = await supabase
+        .from('bids')
+        .select('*')
+        .eq('auction_id', auctionId)
+        .eq('status', 'active')
+        .order('amount', { ascending: false });
+
+      if (!auctionBids || auctionBids.length === 0) {
+        // Nessuna offerta — annulla l'asta
+        await supabase.from('auctions').update({ status: 'cancelled' }).eq('id', auctionId);
+        return { winner: null };
+      }
+
+      const winningBid = auctionBids[0];
+      const winningAmount = winningBid.amount;
+
+      // 3. Recupera squadra vincitrice
+      const { data: winnerTeam } = await supabase
+        .from('teams')
+        .select('*')
+        .eq('id', winningBid.team_id)
+        .single();
+      if (!winnerTeam) throw new Error('Squadra vincitrice non trovata');
+
+      // 4. Scala budget squadra vincitrice
+      const newBudget = (winnerTeam.budget || 0) - winningAmount;
+      await supabase.from('teams').update({ budget: newBudget }).eq('id', winnerTeam.id);
+
+      // 5. Crea budget_transaction per acquisto
+      await supabase.from('budget_transactions').insert({
+        team_id: winnerTeam.id,
+        team_name: winnerTeam.name,
+        amount: -winningAmount,
+        type: 'auction_purchase',
+        description: `Acquisto ${auction.player_name} all'asta`,
+        previous_balance: winnerTeam.budget || 0,
+        new_balance: newBudget,
+        related_player_id: auction.player_id,
+        related_player_name: auction.player_name,
+        league_id: auction.league_id || null
+      });
+
+      // 6. Assegna giocatore alla squadra vincitrice
+      await supabase.from('players').update({ team_id: winnerTeam.id }).eq('id', auction.player_id);
+
+      // 7. Crea transfer record
+      await supabase.from('transfers').insert({
+        player_id: auction.player_id,
+        player_name: auction.player_name,
+        to_team_id: winnerTeam.id,
+        to_team_name: winnerTeam.name,
+        transfer_type: 'auction',
+        amount: winningAmount,
+        season: new Date().getFullYear().toString(),
+        notes: `Asta a busta chiusa - sessione: ${auction.auction_session_name || 'N/D'}`
+      });
+
+      // 8. Premio 10% al censore (created_by del giocatore)
+      const { data: playerData } = await supabase
+        .from('players')
+        .select('created_by')
+        .eq('id', auction.player_id)
+        .single();
+
+      if (playerData?.created_by) {
+        // Trova la squadra del censore
+        const { data: censorTeam } = await supabase
+          .from('teams')
+          .select('*')
+          .eq('owner_email', playerData.created_by)
+          .single();
+
+        if (censorTeam) {
+          const censorPrize = Math.round(winningAmount * 0.1);
+          const newCensorBudget = (censorTeam.budget || 0) + censorPrize;
+          await supabase.from('teams').update({ budget: newCensorBudget }).eq('id', censorTeam.id);
+          await supabase.from('budget_transactions').insert({
+            team_id: censorTeam.id,
+            team_name: censorTeam.name,
+            amount: censorPrize,
+            type: 'manual_adjustment',
+            description: `Premio censimento 10% - ${auction.player_name} venduto a ${winnerTeam.name}`,
+            previous_balance: censorTeam.budget || 0,
+            new_balance: newCensorBudget,
+            related_player_name: auction.player_name,
+            league_id: auction.league_id || null
+          });
+        }
+      }
+
+      // 9. Chiudi l'asta e marca il vincitore
+      await supabase.from('auctions').update({
+        status: 'completed',
+        current_winner_team_id: winnerTeam.id,
+        current_winner_team_name: winnerTeam.name,
+        current_price: winningAmount
+      }).eq('id', auctionId);
+
+      // 10. Annulla tutte le altre offerte
+      await supabase.from('bids').update({ status: 'cancelled' })
+        .eq('auction_id', auctionId)
+        .neq('id', winningBid.id);
+
+      return { winner: { team_name: winnerTeam.name, amount: winningAmount } };
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['auctionsAdmin'] });
       queryClient.invalidateQueries({ queryKey: ['allBids'] });
       queryClient.invalidateQueries({ queryKey: ['teams'] });
       queryClient.invalidateQueries({ queryKey: ['allPlayersAuction'] });
+      queryClient.invalidateQueries({ queryKey: ['players'] });
       if (data?.winner) {
         toast.success(`Asta chiusa! Vince ${data.winner.team_name} con €${(data.winner.amount / 1000000).toFixed(2)}M`);
       } else {
@@ -231,14 +341,10 @@ export default function GestioneAste() {
     let success = 0, errors = 0;
     for (const auctionId of selectedActiveAuctions) {
       try {
-        await base44.functions.invoke('closeSealedBidAuction', { auction_id: auctionId });
+        await closeAuctionMutation.mutateAsync(auctionId);
         success++;
       } catch (e) { errors++; }
     }
-    queryClient.invalidateQueries({ queryKey: ['auctionsAdmin'] });
-    queryClient.invalidateQueries({ queryKey: ['allBids'] });
-    queryClient.invalidateQueries({ queryKey: ['teams'] });
-    queryClient.invalidateQueries({ queryKey: ['allPlayersAuction'] });
     setSelectedActiveAuctions([]);
     setClosingBulk(false);
     toast.success(`Chiuse ${success} aste${errors > 0 ? `, ${errors} errori` : ''}`);
