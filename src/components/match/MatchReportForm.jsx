@@ -108,7 +108,7 @@ export default function MatchReportForm({ open, onClose, match, homeTeam, awayTe
       }
 
       if (imageContents.length === 0) {
-        toast.error('Nessuna foto o thumbnail disponibile per l'analisi.');
+        toast.error("Nessuna foto o thumbnail disponibile per l'analisi.");
         setAnalyzingPhotos(false);
         return;
       }
