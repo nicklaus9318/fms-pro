@@ -186,7 +186,7 @@ export default function ManagersList() {
                     </TableCell>
                     <TableCell>
                       <Badge variant={manager.role === 'admin' ? 'default' : 'secondary'}>
-                        {manager.role === 'admin' ? <><Shield className="w-3 h-3 mr-1" />Admin</> : 'User'}
+                        {manager.role === 'admin' ? <><Shield className="w-3 h-3 mr-1" />Admin</> : manager.role === 'controller' ? '🔍 Controllore' : 'User'}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -236,8 +236,9 @@ export default function ManagersList() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="user">User</SelectItem>
-                            <SelectItem value="admin">Admin</SelectItem>
+                            <SelectItem value="user">👤 User</SelectItem>
+                            <SelectItem value="admin">🔐 Admin</SelectItem>
+                            <SelectItem value="controller">🔍 Controllore</SelectItem>
                           </SelectContent>
                         </Select>
                       </TableCell>
@@ -280,7 +281,7 @@ export default function ManagersList() {
                     <p className="text-sm text-slate-500">{manager.email}</p>
                   </div>
                   <Badge variant={manager.role === 'admin' ? 'default' : 'secondary'}>
-                    {manager.role === 'admin' ? 'Admin' : 'User'}
+                    {manager.role === 'admin' ? 'Admin' : manager.role === 'controller' ? 'Controllore' : 'User'}
                   </Badge>
                 </div>
                 {team && (
@@ -322,8 +323,9 @@ export default function ManagersList() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="user">User</SelectItem>
-                          <SelectItem value="admin">Admin</SelectItem>
+                          <SelectItem value="user">👤 User</SelectItem>
+                          <SelectItem value="admin">🔐 Admin</SelectItem>
+                          <SelectItem value="controller">🔍 Controllore</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
