@@ -849,13 +849,79 @@ export default function AdminPanel() {
 
   const closeLeagueMutation = useMutation({
     mutationFn: async (leagueId) => {
+      const league = leagues.find(l => l.id === leagueId);
+
+      // 1. Azzera cartellini gialli accumulati
       const playersWithYellows = allPlayers.filter(p => p.yellow_cards_accumulated > 0);
       await Promise.all(playersWithYellows.map(p => base44.entities.Player.update(p.id, { yellow_cards_accumulated: 0 })));
+
+      // 2. Elimina squalifiche attive
       const suspensions = await base44.entities.PlayerStatus.filter({ status_type: 'suspended' });
       await Promise.all(suspensions.map(s => base44.entities.PlayerStatus.delete(s.id)));
+
+      // 3. Premi classifica finale (solo per leghe campionato)
+      const PRIZES = [70000000, 66000000, 65000000, 64000000, 63000000, 62000000, 61000000, 60000000, 59000000, 58000000];
+      const SERIE_A_BONUS = 5000000; // bonus extra solo Serie A
+
+      // Recupera classifica finale ordinata per punti
+      const { data: standingsData } = await supabase
+        .from('standings')
+        .select('*')
+        .eq('league_id', leagueId)
+        .order('points', { ascending: false })
+        .order('goal_difference', { ascending: false })
+        .order('goals_for', { ascending: false });
+
+      if (standingsData && standingsData.length > 0) {
+        const isSerieA = league?.name?.toLowerCase().includes('serie a');
+
+        for (let i = 0; i < standingsData.length; i++) {
+          const standing = standingsData[i];
+          const prize = PRIZES[i] || 58000000;
+          const bonus = (i === 0 && isSerieA) ? SERIE_A_BONUS : 0;
+          const totalPrize = prize + bonus;
+
+          // Recupera team aggiornato
+          const { data: teamData } = await supabase
+            .from('teams')
+            .select('budget')
+            .eq('id', standing.team_id)
+            .single();
+
+          if (teamData) {
+            const prevBudget = teamData.budget || 0;
+            const newBudget = prevBudget + totalPrize;
+
+            await supabase
+              .from('teams')
+              .update({ budget: newBudget })
+              .eq('id', standing.team_id);
+
+            await supabase
+              .from('budget_transactions')
+              .insert({
+                team_id: standing.team_id,
+                team_name: standing.team_name,
+                amount: totalPrize,
+                type: 'match_prize',
+                description: `Premio ${i + 1}° posto - ${league?.name || 'Competizione'} (${league?.season || ''})${bonus > 0 ? ' + Bonus Serie A' : ''}`,
+                previous_balance: prevBudget,
+                new_balance: newBudget,
+                league_id: leagueId
+              });
+          }
+        }
+      }
+
+      // 4. Chiudi la lega
       await base44.entities.League.update(leagueId, { status: 'completed' });
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey:['leagues'] }); queryClient.invalidateQueries({ queryKey:['allPlayers'] }); toast.success('Competizione chiusa'); }
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey:['leagues'] });
+      queryClient.invalidateQueries({ queryKey:['allPlayers'] });
+      queryClient.invalidateQueries({ queryKey:['teams'] });
+      toast.success('Competizione chiusa e premi classifica accreditati!');
+    }
   });
 
   const updateCompetitionMutation = useMutation({
