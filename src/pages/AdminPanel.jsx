@@ -767,7 +767,7 @@ function GettoniManager({ teams }) {
 export default function AdminPanel() {
   const [user, setUser] = useState(null);
   const [showLeagueForm, setShowLeagueForm] = useState(false);
-  const [leagueFormData, setLeagueFormData] = useState({ name:'', season:'', default_budget:100000000, participating_teams:[], competition_format:'league', logo_url:'' });
+  const [leagueFormData, setLeagueFormData] = useState({ name:'', season:'', default_budget:100000000, participating_teams:[], competition_format:'league', logo_url:'', prize_type:'campionato' });
   const [uploadingLeagueLogo, setUploadingLeagueLogo] = useState(false);
   const [loading, setLoading] = useState(false);
   const [generatingKnockout, setGeneratingKnockout] = useState(false);
@@ -834,7 +834,7 @@ export default function AdminPanel() {
       queryClient.invalidateQueries({ queryKey:['competitions'] });
       toast.success('Competizione creata e calendario generato');
       setShowLeagueForm(false);
-      setLeagueFormData({ name:'', season:'', default_budget:100000000, participating_teams:[], competition_format:'league' });
+      setLeagueFormData({ name:'', season:'', default_budget:100000000, participating_teams:[], competition_format:'league', logo_url:'', prize_type:'campionato' });
     }
   });
 
@@ -859,59 +859,78 @@ export default function AdminPanel() {
       const suspensions = await base44.entities.PlayerStatus.filter({ status_type: 'suspended' });
       await Promise.all(suspensions.map(s => base44.entities.PlayerStatus.delete(s.id)));
 
-      // 3. Premi classifica finale (solo per leghe campionato)
-      const PRIZES = [70000000, 66000000, 65000000, 64000000, 63000000, 62000000, 61000000, 60000000, 59000000, 58000000];
-      const SERIE_A_BONUS = 5000000; // bonus extra solo Serie A
+      // 3. Premi finali in base al tipo configurato
+      const prizeType = league?.prize_type || 'nessuno';
 
-      // Recupera classifica finale ordinata per punti
-      const { data: standingsData } = await supabase
-        .from('standings')
-        .select('*')
-        .eq('league_id', leagueId)
-        .order('points', { ascending: false })
-        .order('goal_difference', { ascending: false })
-        .order('goals_for', { ascending: false });
+      const CAMPIONATO_PRIZES = [70000000, 66000000, 65000000, 64000000, 63000000, 62000000, 61000000, 60000000, 59000000, 58000000];
+      const SERIE_A_BONUS = 5000000;
 
-      if (standingsData && standingsData.length > 0) {
-        const isSerieA = league?.name?.toLowerCase().includes('serie a');
+      // Premi per singolo vincitore (coppe)
+      const CUP_PRIZES = {
+        coppa_italia: 30000000,
+        champions:    30000000,
+        europa:       25000000,
+        conference:   25000000,
+      };
 
-        for (let i = 0; i < standingsData.length; i++) {
-          const standing = standingsData[i];
-          const prize = PRIZES[i] || 58000000;
-          const bonus = (i === 0 && isSerieA) ? SERIE_A_BONUS : 0;
-          const totalPrize = prize + bonus;
+      if (prizeType === 'campionato') {
+        // Premi per posizione in classifica
+        const { data: standingsData } = await supabase
+          .from('standings')
+          .select('*')
+          .eq('league_id', leagueId)
+          .order('points', { ascending: false })
+          .order('goal_difference', { ascending: false })
+          .order('goals_for', { ascending: false });
 
-          // Recupera team aggiornato
-          const { data: teamData } = await supabase
-            .from('teams')
-            .select('budget')
-            .eq('id', standing.team_id)
-            .single();
+        if (standingsData && standingsData.length > 0) {
+          const isSerieA = league?.name?.toLowerCase().includes('serie a');
+          for (let i = 0; i < standingsData.length; i++) {
+            const standing = standingsData[i];
+            const prize = CAMPIONATO_PRIZES[i] || 58000000;
+            const bonus = (i === 0 && isSerieA) ? SERIE_A_BONUS : 0;
+            const totalPrize = prize + bonus;
+            const { data: teamData } = await supabase.from('teams').select('budget').eq('id', standing.team_id).single();
+            if (teamData) {
+              const prevBudget = teamData.budget || 0;
+              const newBudget = prevBudget + totalPrize;
+              await supabase.from('teams').update({ budget: newBudget }).eq('id', standing.team_id);
+              await supabase.from('budget_transactions').insert({
+                team_id: standing.team_id, team_name: standing.team_name,
+                amount: totalPrize, type: 'match_prize',
+                description: `Premio ${i + 1}° posto - ${league?.name || 'Competizione'} (${league?.season || ''})${bonus > 0 ? ' + Bonus Serie A' : ''}`,
+                previous_balance: prevBudget, new_balance: newBudget, league_id: leagueId
+              });
+            }
+          }
+        }
+      } else if (CUP_PRIZES[prizeType]) {
+        // Premio singolo al vincitore (prima squadra in classifica o con più punti)
+        const cupPrize = CUP_PRIZES[prizeType];
+        const { data: standingsData } = await supabase
+          .from('standings')
+          .select('*')
+          .eq('league_id', leagueId)
+          .order('points', { ascending: false })
+          .limit(1);
 
+        if (standingsData && standingsData.length > 0) {
+          const winner = standingsData[0];
+          const { data: teamData } = await supabase.from('teams').select('budget').eq('id', winner.team_id).single();
           if (teamData) {
             const prevBudget = teamData.budget || 0;
-            const newBudget = prevBudget + totalPrize;
-
-            await supabase
-              .from('teams')
-              .update({ budget: newBudget })
-              .eq('id', standing.team_id);
-
-            await supabase
-              .from('budget_transactions')
-              .insert({
-                team_id: standing.team_id,
-                team_name: standing.team_name,
-                amount: totalPrize,
-                type: 'match_prize',
-                description: `Premio ${i + 1}° posto - ${league?.name || 'Competizione'} (${league?.season || ''})${bonus > 0 ? ' + Bonus Serie A' : ''}`,
-                previous_balance: prevBudget,
-                new_balance: newBudget,
-                league_id: leagueId
-              });
+            const newBudget = prevBudget + cupPrize;
+            await supabase.from('teams').update({ budget: newBudget }).eq('id', winner.team_id);
+            await supabase.from('budget_transactions').insert({
+              team_id: winner.team_id, team_name: winner.team_name,
+              amount: cupPrize, type: 'match_prize',
+              description: `Premio vittoria ${league?.name || 'Competizione'} (${league?.season || ''})`,
+              previous_balance: prevBudget, new_balance: newBudget, league_id: leagueId
+            });
           }
         }
       }
+      // se prizeType === 'nessuno' o 'supercoppa' non fa nulla
 
       // 4. Chiudi la lega
       await base44.entities.League.update(leagueId, { status: 'completed' });
@@ -1611,6 +1630,22 @@ export default function AdminPanel() {
                   <SelectItem value="champions_swiss">⭐ Champions Swiss System</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Tipo Premi Finali</Label>
+              <Select value={leagueFormData.prize_type || 'campionato'} onValueChange={(v) => setLeagueFormData({...leagueFormData, prize_type:v})}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="campionato">🏆 Campionato (70M→58M per posizione)</SelectItem>
+                  <SelectItem value="coppa_italia">🥇 Coppa Italia (30M al vincitore)</SelectItem>
+                  <SelectItem value="champions">⭐ Champions League (30M al vincitore)</SelectItem>
+                  <SelectItem value="europa">🌍 Europa League (25M al vincitore)</SelectItem>
+                  <SelectItem value="conference">🌐 Conference League (25M al vincitore)</SelectItem>
+                  <SelectItem value="supercoppa">🏅 Supercoppa (nessun premio automatico)</SelectItem>
+                  <SelectItem value="nessuno">❌ Nessun premio automatico</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-slate-400">I premi vengono accreditati automaticamente quando chiudi la competizione</p>
             </div>
             <div className="space-y-2">
               <Label>Squadre Partecipanti *</Label>
