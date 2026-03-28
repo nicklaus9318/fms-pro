@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
+import { supabase } from '@/api/supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -444,13 +445,12 @@ export default function Calendar() {
         for (const status of activeStatuses) {
           const newRemaining = (status.matchdays_remaining || 1) - 1;
           if (newRemaining <= 0) {
-            await base44.entities.PlayerStatus.delete(status.id);
-            // Rimuovi anche player_status sul giocatore se infortunato
+            await supabase.from('player_statuses').delete().eq('id', status.id);
             if (status.status_type === 'injured') {
-              await base44.entities.Player.update(status.player_id, { player_status: null });
+              await supabase.from('players').update({ player_status: null }).eq('id', status.player_id);
             }
           } else {
-            await base44.entities.PlayerStatus.update(status.id, { matchdays_remaining: newRemaining });
+            await supabase.from('player_statuses').update({ matchdays_remaining: newRemaining }).eq('id', status.id);
           }
         }
       }
@@ -465,25 +465,31 @@ export default function Calendar() {
         const homePrize = PRIZE_BASE + (homeScore > awayScore ? PRIZE_WIN : homeScore === awayScore ? PRIZE_DRAW : 0);
         const awayPrize = PRIZE_BASE + (awayScore > homeScore ? PRIZE_WIN : homeScore === awayScore ? PRIZE_DRAW : 0);
 
+        // Recupera budget aggiornato delle squadre da Supabase
+        const { data: homeTeamFresh } = await supabase.from('teams').select('budget').eq('id', homeTeam.id).single();
+        const { data: awayTeamFresh } = await supabase.from('teams').select('budget').eq('id', awayTeam.id).single();
+        const homePrevBudget = homeTeamFresh?.budget || homeTeam.budget || 0;
+        const awayPrevBudget = awayTeamFresh?.budget || awayTeam.budget || 0;
+
         // Aggiorna budget casa
-        const newHomeBudget = (homeTeam.budget || 0) + homePrize;
-        await base44.entities.Team.update(homeTeam.id, { budget: newHomeBudget });
-        await base44.entities.BudgetTransaction.create({
+        const newHomeBudget = homePrevBudget + homePrize;
+        await supabase.from('teams').update({ budget: newHomeBudget }).eq('id', homeTeam.id);
+        await supabase.from('budget_transactions').insert({
           team_id: homeTeam.id, team_name: homeTeam.name,
           amount: homePrize, type: 'match_prize',
           description: `Premio partita G${currentMatchday} vs ${awayTeam.name} (${homeScore}-${awayScore})`,
-          previous_balance: homeTeam.budget || 0, new_balance: newHomeBudget,
+          previous_balance: homePrevBudget, new_balance: newHomeBudget,
           league_id: selectedMatch.league_id
         });
 
         // Aggiorna budget ospite
-        const newAwayBudget = (awayTeam.budget || 0) + awayPrize;
-        await base44.entities.Team.update(awayTeam.id, { budget: newAwayBudget });
-        await base44.entities.BudgetTransaction.create({
+        const newAwayBudget = awayPrevBudget + awayPrize;
+        await supabase.from('teams').update({ budget: newAwayBudget }).eq('id', awayTeam.id);
+        await supabase.from('budget_transactions').insert({
           team_id: awayTeam.id, team_name: awayTeam.name,
           amount: awayPrize, type: 'match_prize',
           description: `Premio partita G${currentMatchday} vs ${homeTeam.name} (${awayScore}-${homeScore})`,
-          previous_balance: awayTeam.budget || 0, new_balance: newAwayBudget,
+          previous_balance: awayPrevBudget, new_balance: newAwayBudget,
           league_id: selectedMatch.league_id
         });
       }
