@@ -33,10 +33,16 @@ export default function ListaUtenti() {
 
   const isAdmin = currentUser?.role === 'admin';
 
-  // Carica tutti gli utenti da user_roles (include phone_number e full_name)
+  // Carica tutti gli utenti direttamente da user_roles via Supabase
   const { data: allUsers = [] } = useQuery({
     queryKey: ['users'],
-    queryFn: () => base44.entities.User.list(),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('user_roles')
+        .select('*');
+      if (error) throw error;
+      return data || [];
+    },
     enabled: isAdmin
   });
 
