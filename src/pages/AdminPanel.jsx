@@ -768,7 +768,7 @@ function GettoniManager({ teams }) {
 export default function AdminPanel() {
   const [user, setUser] = useState(null);
   const [showLeagueForm, setShowLeagueForm] = useState(false);
-  const [leagueFormData, setLeagueFormData] = useState({ name:'', season:'', default_budget:100000000, participating_teams:[], competition_format:'league', logo_url:'', prize_type:'campionato' });
+  const [leagueFormData, setLeagueFormData] = useState({ name:'', season:'', default_budget:100000000, participating_teams:[], competition_format:'league', logo_url:'', prize_type:'campionato', current_matchday: 0 });
   const [uploadingLeagueLogo, setUploadingLeagueLogo] = useState(false);
   const [loading, setLoading] = useState(false);
   const [generatingKnockout, setGeneratingKnockout] = useState(false);
@@ -810,7 +810,7 @@ export default function AdminPanel() {
 
   const createLeagueMutation = useMutation({
     mutationFn: async (data) => {
-      const { data: leagueRow, error: leagueErr } = await supabase.from('leagues').insert({ name: data.name, season: data.season, default_budget: data.default_budget, participating_teams: data.participating_teams, competition_format: data.competition_format, logo_url: data.logo_url || null, prize_type: data.prize_type || 'campionato', status: 'active' }).select().single();
+      const { data: leagueRow, error: leagueErr } = await supabase.from('leagues').insert({ name: data.name, season: data.season, default_budget: data.default_budget, participating_teams: data.participating_teams, competition_format: data.competition_format, logo_url: data.logo_url || null, prize_type: data.prize_type || 'campionato', current_matchday: data.current_matchday || 0, status: 'active' }).select().single();
       if (leagueErr) throw leagueErr;
       const league = leagueRow;
       const { data: compRow, error: compErr } = await supabase.from('competitions').insert({ name: data.name, league_id: league.id, season: data.season, format: data.competition_format, participating_teams: data.participating_teams, status: 'active' }).select().single();
@@ -842,7 +842,7 @@ export default function AdminPanel() {
       queryClient.invalidateQueries({ queryKey:['competitions'] });
       toast.success('Competizione creata e calendario generato');
       setShowLeagueForm(false);
-      setLeagueFormData({ name:'', season:'', default_budget:100000000, participating_teams:[], competition_format:'league', logo_url:'', prize_type:'campionato' });
+      setLeagueFormData({ name:'', season:'', default_budget:100000000, participating_teams:[], competition_format:'league', logo_url:'', prize_type:'campionato', current_matchday: 0 });
     }
   });
 
@@ -865,8 +865,8 @@ export default function AdminPanel() {
         supabase.from('players').update({ yellow_cards_accumulated: 0 }).eq('id', p.id)
       ));
 
-      // 2. Elimina squalifiche attive
-      await supabase.from('player_statuses').delete().eq('status_type', 'suspended');
+      // 2. Elimina TUTTI i player_statuses (infortuni + squalifiche) alla chiusura
+      await supabase.from('player_statuses').delete().neq('id', '00000000-0000-0000-0000-000000000000');
 
       // 3. Premi finali in base al tipo configurato
       const prizeType = league?.prize_type || 'nessuno';
@@ -1283,6 +1283,28 @@ export default function AdminPanel() {
             successMessage="Tutti i giocatori eliminati"
           />
 
+          {/* 6 — Reset Hall of Fame */}
+          <ResetCard
+            color="purple"
+            title="Reset Hall of Fame"
+            description="Azzera i contatori all-time di gol e assist su tutti i giocatori. La classifica marcatori/assistman ripartirà da zero."
+            items={[
+              'Gol totali (colonna goals su players)',
+              'Assist totali (colonna assists su players)',
+            ]}
+            confirmText="Azzerare la Hall of Fame (gol e assist storici)? Operazione irreversibile."
+            buttonLabel="🏆 Reset Hall of Fame"
+            onConfirm={async () => {
+              const { error } = await supabase
+                .from('players')
+                .update({ goals: 0, assists: 0 })
+                .neq('id', '00000000-0000-0000-0000-000000000000');
+              if (error) throw new Error('players: ' + error.message);
+            }}
+            queryClient={queryClient}
+            successMessage="Hall of Fame azzerata con successo"
+          />
+
         </TabsContent>
 
         {/* ── Leagues ── */}
@@ -1324,6 +1346,25 @@ export default function AdminPanel() {
                         onClick={() => { setEditingCompetition(lc); setCompetitionFormData({ name:lc.name, format:lc.format, participating_teams:lc.participating_teams||[] }); setShowCompetitionEditModal(true); }}>
                         <Settings className="w-4 h-4 mr-2" />Modifica Competizione
                       </Button>
+                    )}
+                    {league.status === 'active' && (
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium text-slate-500">Giornata corrente visibile</p>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number"
+                            min="0"
+                            className="w-20 h-8 text-sm"
+                            defaultValue={league.current_matchday || 0}
+                            onBlur={async (e) => {
+                              const val = parseInt(e.target.value) || 0;
+                              await supabase.from('leagues').update({ current_matchday: val }).eq('id', league.id);
+                              queryClient.invalidateQueries({ queryKey: ['leagues'] });
+                            }}
+                          />
+                          <span className="text-xs text-slate-400">0 = automatico</span>
+                        </div>
+                      </div>
                     )}
                     {league.status === 'active' && (
                       <Button size="sm" variant="outline" className="w-full border-amber-300 text-amber-700"
@@ -1710,6 +1751,12 @@ export default function AdminPanel() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-slate-400">I premi vengono accreditati automaticamente quando chiudi la competizione</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Giornata Corrente Visibile</Label>
+              <Input type="number" min="0" value={leagueFormData.current_matchday || 0}
+                onChange={(e) => setLeagueFormData({...leagueFormData, current_matchday: parseInt(e.target.value) || 0})} />
+              <p className="text-xs text-slate-400">0 = automatico (ultima giornata con partite completate)</p>
             </div>
             <div className="space-y-2">
               <Label>Squadre Partecipanti *</Label>

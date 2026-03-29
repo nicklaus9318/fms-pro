@@ -19,6 +19,93 @@ import { toast } from 'sonner';
 
 moment.locale('it');
 
+// ─── Hall of Fame ─────────────────────────────────────────────────────────────
+function HallOfFame({ players, teams }) {
+  const [tab, setTab] = useState('goals');
+
+  const getTeamName = (teamId) => teams.find(t => t.id === teamId)?.name || 'Svincolato';
+
+  const topScorers = [...players]
+    .filter(p => (p.goals || 0) > 0)
+    .sort((a, b) => (b.goals || 0) - (a.goals || 0))
+    .slice(0, 50);
+
+  const topAssistmen = [...players]
+    .filter(p => (p.assists || 0) > 0)
+    .sort((a, b) => (b.assists || 0) - (a.assists || 0))
+    .slice(0, 50);
+
+  const list = tab === 'goals' ? topScorers : topAssistmen;
+  const statKey = tab === 'goals' ? 'goals' : 'assists';
+  const statLabel = tab === 'goals' ? '⚽ Gol' : '🅰️ Assist';
+
+  const medalColor = (i) => {
+    if (i === 0) return 'text-yellow-500 font-bold';
+    if (i === 1) return 'text-slate-400 font-bold';
+    if (i === 2) return 'text-amber-600 font-bold';
+    return 'text-slate-500';
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card className="border-0 shadow-sm">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Trophy className="w-5 h-5 text-amber-500" />
+            Hall of Fame — Top 50 All Time
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-2 mb-4">
+            <Button
+              size="sm"
+              variant={tab === 'goals' ? 'default' : 'outline'}
+              onClick={() => setTab('goals')}
+            >⚽ Marcatori</Button>
+            <Button
+              size="sm"
+              variant={tab === 'assists' ? 'default' : 'outline'}
+              onClick={() => setTab('assists')}
+            >🅰️ Assistman</Button>
+          </div>
+
+          {list.length === 0 ? (
+            <p className="text-center text-slate-400 py-8">Nessun dato disponibile</p>
+          ) : (
+            <div className="space-y-1">
+              {list.map((player, i) => (
+                <div
+                  key={player.id}
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg ${i < 3 ? 'bg-amber-50' : i % 2 === 0 ? 'bg-slate-50' : 'bg-white'}`}
+                >
+                  <span className={`w-7 text-center text-sm ${medalColor(i)}`}>
+                    {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}`}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-slate-800 text-sm truncate">
+                      {player.first_name} {player.last_name}
+                    </p>
+                    <p className="text-xs text-slate-400 truncate">{getTeamName(player.team_id)}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {player.role && (
+                      <Badge className="bg-blue-100 text-blue-700 border-0 text-xs">{player.role}</Badge>
+                    )}
+                    <span className="font-bold text-slate-800 text-lg w-8 text-right">
+                      {player[statKey] || 0}
+                    </span>
+                    <span className="text-xs text-slate-400 w-12">{statLabel}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 function generateBergerSchedule(teams) {
   const n = teams.length;
   if (n < 2) return [];
@@ -518,9 +605,6 @@ export default function Calendar() {
     }
   };
 
-  const leagueMatches = matches.filter(m => m.league_id === selectedLeague);
-  const matchdays = [...new Set(leagueMatches.map(m => m.matchday))].sort((a, b) => a - b);
-  const currentMatchdayMatches = leagueMatches.filter(m => m.matchday === selectedMatchday);
   const knockoutCompetition = competitions.find(c => c.league_id === selectedLeague && c.format === 'knockout');
   const knockoutMatches = knockoutCompetition ? matches.filter(m => m.competition_id === knockoutCompetition.id) : [];
   const getTeam = (teamId) => teams.find(t => t.id === teamId);
@@ -529,7 +613,21 @@ export default function Calendar() {
   const currentLeague = leagues.find(l => l.id === selectedLeague);
   const seasonMatches = matches.filter(m => m.season === currentLeague?.season && m.status === 'completed');
 
-  return (
+  const leagueMatches = matches.filter(m => m.league_id === selectedLeague);
+
+  // Giornata massima visibile: manual override o ultima completata + 1
+  const visibleUpToMatchday = (() => {
+    if (!currentLeague) return Infinity;
+    if (currentLeague.current_matchday && currentLeague.current_matchday > 0) return currentLeague.current_matchday;
+    const completed = leagueMatches.filter(m => m.status === 'completed');
+    if (completed.length === 0) return 1;
+    return Math.max(...completed.map(m => m.matchday)) + 1;
+  })();
+
+  const matchdays = [...new Set(leagueMatches.map(m => m.matchday))]
+    .filter(d => d <= visibleUpToMatchday)
+    .sort((a, b) => a - b);
+  const currentMatchdayMatches = leagueMatches.filter(m => m.matchday === selectedMatchday);
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -552,9 +650,10 @@ export default function Calendar() {
       </div>
 
       <Tabs defaultValue="classifica" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="classifica">Classifica</TabsTrigger>
           <TabsTrigger value="statistiche">Statistiche</TabsTrigger>
+          <TabsTrigger value="halloffame">🏆 Hall of Fame</TabsTrigger>
           {knockoutCompetition && <TabsTrigger value="tabellone">Tabellone</TabsTrigger>}
         </TabsList>
         <TabsContent value="classifica">
@@ -562,6 +661,9 @@ export default function Calendar() {
         </TabsContent>
         <TabsContent value="statistiche">
           <SeasonStats matches={seasonMatches} players={players} playerStatuses={playerStatuses} />
+        </TabsContent>
+        <TabsContent value="halloffame">
+          <HallOfFame players={players} teams={teams} />
         </TabsContent>
         {knockoutCompetition && (
           <TabsContent value="tabellone">

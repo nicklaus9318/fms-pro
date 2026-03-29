@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/api/supabaseClient';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -16,8 +16,10 @@ export default function Dashboard() {
   useEffect(() => {
     const loadUser = async () => {
       try {
-        const userData = await base44.auth.me();
-        setUser(userData);
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (!authUser) return;
+        const { data } = await supabase.from('user_roles').select('*').eq('email', authUser.email).single();
+        if (data) setUser(data);
       } catch (e) {
         console.log('User not logged in');
       }
@@ -27,32 +29,32 @@ export default function Dashboard() {
 
   const { data: leagues = [] } = useQuery({
     queryKey: ['leagues'],
-    queryFn: () => base44.entities.League.list()
+    queryFn: async () => { const { data } = await supabase.from('leagues').select('*'); return data || []; }
   });
 
   const { data: teams = [] } = useQuery({
     queryKey: ['teams'],
-    queryFn: () => base44.entities.Team.list()
+    queryFn: async () => { const { data } = await supabase.from('teams').select('*'); return data || []; }
   });
 
   const { data: players = [] } = useQuery({
     queryKey: ['players'],
-    queryFn: () => base44.entities.Player.filter({ status: 'approved' })
+    queryFn: async () => { const { data } = await supabase.from('players').select('*').eq('status', 'approved'); return data || []; }
   });
 
   const { data: matches = [] } = useQuery({
     queryKey: ['matches'],
-    queryFn: () => base44.entities.Match.list()
+    queryFn: async () => { const { data } = await supabase.from('matches').select('*'); return data || []; }
   });
 
   const { data: auctions = [] } = useQuery({
     queryKey: ['auctions'],
-    queryFn: () => base44.entities.Auction.filter({ status: 'active' })
+    queryFn: async () => { const { data } = await supabase.from('auctions').select('*').eq('status', 'active'); return data || []; }
   });
 
   const { data: playerStatuses = [] } = useQuery({
     queryKey: ['playerStatuses'],
-    queryFn: () => base44.entities.PlayerStatus.list()
+    queryFn: async () => { const { data } = await supabase.from('player_statuses').select('*'); return data || []; }
   });
 
   // Find user's team
@@ -67,11 +69,27 @@ export default function Dashboard() {
 
   const selectedTeam = teams.find(t => t.id === selectedTeamId);
   const teamPlayers = players.filter(p => p.team_id === selectedTeamId);
-  
-  const unavailablePlayers = teamPlayers.filter(p => {
+
+  // Lega attiva della squadra selezionata
+  const activeLeague = leagues.find(l =>
+    l.status === 'active' && (l.participating_teams || []).includes(selectedTeamId)
+  );
+
+  // Mostra indisponibili SOLO se c'è una lega attiva
+  const unavailablePlayers = activeLeague ? teamPlayers.filter(p => {
     const status = playerStatuses.find(s => s.player_id === p.id);
     return status && (status.status_type === 'injured' || status.status_type === 'suspended');
-  });
+  }) : [];
+
+  // current_matchday: giornata massima con partite completate nella lega attiva
+  // oppure il campo current_matchday se impostato manualmente dall'admin
+  const currentMatchday = (() => {
+    if (!activeLeague) return null;
+    if (activeLeague.current_matchday) return activeLeague.current_matchday;
+    const leagueMatches = matches.filter(m => m.league_id === activeLeague.id && m.status === 'completed');
+    if (leagueMatches.length === 0) return 0;
+    return Math.max(...leagueMatches.map(m => m.matchday));
+  })();
 
   const nextMatch = matches
     .filter(m => m.status === 'scheduled' && (m.home_team_id === selectedTeamId || m.away_team_id === selectedTeamId))
@@ -84,12 +102,22 @@ export default function Dashboard() {
     return `€${budget}`;
   };
 
+  // Prossime partite: solo fino alla giornata successiva a quella corrente
   const upcomingMatches = matches
-    .filter(m => m.status === 'scheduled')
+    .filter(m => {
+      if (m.status !== 'scheduled') return false;
+      if (currentMatchday !== null && m.matchday > currentMatchday + 1) return false;
+      return true;
+    })
     .slice(0, 5);
 
+  // Risultati recenti: solo fino alla giornata corrente
   const recentResults = matches
-    .filter(m => m.status === 'completed')
+    .filter(m => {
+      if (m.status !== 'completed') return false;
+      if (currentMatchday !== null && m.matchday > currentMatchday) return false;
+      return true;
+    })
     .slice(0, 5);
 
   return (
