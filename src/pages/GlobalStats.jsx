@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/api/supabaseClient';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -10,7 +10,7 @@ import { Trophy, Award, AlertCircle, Target, Medal } from 'lucide-react';
 export default function GlobalStats() {
   const { data: leagues = [] } = useQuery({
     queryKey: ['leagues'],
-    queryFn: () => base44.entities.League.list()
+    queryFn: async () => { const { data } = await supabase.from('leagues').select('*'); return data || []; }
   });
 
   // Estrai tutte le stagioni uniche dalle leghe
@@ -20,22 +20,28 @@ export default function GlobalStats() {
 
   const { data: matches = [] } = useQuery({
     queryKey: ['matches', selectedSeason],
-    queryFn: () => base44.entities.Match.filter({ season: selectedSeason, status: 'completed' })
+    queryFn: async () => {
+      const { data } = await supabase.from('matches').select('*').eq('season', selectedSeason).eq('status', 'completed');
+      return data || [];
+    }
   });
 
   const { data: teams = [] } = useQuery({
     queryKey: ['teams'],
-    queryFn: () => base44.entities.Team.list()
+    queryFn: async () => { const { data } = await supabase.from('teams').select('*'); return data || []; }
   });
 
   const { data: players = [] } = useQuery({
     queryKey: ['players'],
-    queryFn: () => base44.entities.Player.list()
+    queryFn: async () => { const { data } = await supabase.from('players').select('*'); return data || []; }
   });
 
   const { data: suspendedPlayers = [] } = useQuery({
     queryKey: ['suspendedPlayers'],
-    queryFn: () => base44.entities.PlayerStatus.filter({ status_type: 'suspended' })
+    queryFn: async () => {
+      const { data } = await supabase.from('player_statuses').select('*').eq('status_type', 'suspended');
+      return data || [];
+    }
   });
 
   // Funzione helper per aggiornare statistiche portieri
@@ -204,7 +210,7 @@ export default function GlobalStats() {
       </div>
 
       <Tabs defaultValue="standings" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="standings">
             <Trophy className="w-4 h-4 mr-2" />
             Campionati
@@ -216,6 +222,10 @@ export default function GlobalStats() {
           <TabsTrigger value="mvp-total">
             <Award className="w-4 h-4 mr-2" />
             Classifica MVP
+          </TabsTrigger>
+          <TabsTrigger value="halloffame">
+            <Trophy className="w-4 h-4 mr-2" />
+            Hall of Fame
           </TabsTrigger>
           <TabsTrigger value="suspensions">
             <AlertCircle className="w-4 h-4 mr-2" />
@@ -514,6 +524,155 @@ export default function GlobalStats() {
               })()}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Tab Hall of Fame */}
+        <TabsContent value="halloffame">
+          <div className="space-y-4">
+            <Card className="border-0 shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Trophy className="w-5 h-5 text-amber-500" />
+                  🏆 Hall of Fame — Top 50 All Time
+                </CardTitle>
+                <p className="text-sm text-slate-500">Classifica storica aggiornata automaticamente. Resettabile solo dall'admin.</p>
+              </CardHeader>
+              <CardContent>
+                <Tabs defaultValue="goals" className="space-y-4">
+                  <TabsList>
+                    <TabsTrigger value="goals">⚽ Marcatori</TabsTrigger>
+                    <TabsTrigger value="assists">🅰️ Assistman</TabsTrigger>
+                  </TabsList>
+
+                  {/* Marcatori */}
+                  <TabsContent value="goals">
+                    {(() => {
+                      const top = [...players]
+                        .filter(p => (p.goals || 0) > 0)
+                        .sort((a, b) => (b.goals || 0) - (a.goals || 0))
+                        .slice(0, 50);
+                      return top.length === 0 ? (
+                        <div className="text-center py-12">
+                          <Trophy className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                          <p className="text-slate-500">Nessun gol registrato</p>
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full">
+                            <thead>
+                              <tr className="border-b text-sm text-slate-500">
+                                <th className="text-left py-2 px-2 w-12">#</th>
+                                <th className="text-left py-2 px-2">Giocatore</th>
+                                <th className="text-left py-2 px-2 hidden sm:table-cell">Squadra</th>
+                                <th className="text-center py-2 px-2 w-16">Ruolo</th>
+                                <th className="text-center py-2 px-2 w-20">⚽ Gol</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {top.map((player, i) => {
+                                const team = teams.find(t => t.id === player.team_id);
+                                return (
+                                  <tr key={player.id} className={`border-b hover:bg-slate-50 ${i < 3 ? 'bg-amber-50/50' : ''}`}>
+                                    <td className="py-3 px-2">
+                                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                                        i === 0 ? 'bg-yellow-100 text-yellow-700' :
+                                        i === 1 ? 'bg-slate-100 text-slate-600' :
+                                        i === 2 ? 'bg-orange-100 text-orange-600' :
+                                        'bg-slate-50 text-slate-400'
+                                      }`}>
+                                        {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}
+                                      </div>
+                                    </td>
+                                    <td className="py-3 px-2 font-medium text-slate-800">
+                                      {player.first_name} {player.last_name}
+                                    </td>
+                                    <td className="py-3 px-2 text-slate-500 text-sm hidden sm:table-cell">
+                                      {team?.name || 'Svincolato'}
+                                    </td>
+                                    <td className="py-3 px-2 text-center">
+                                      {player.role && <Badge className="bg-blue-100 text-blue-700 border-0 text-xs">{player.role}</Badge>}
+                                    </td>
+                                    <td className="py-3 px-2 text-center">
+                                      <Badge className="bg-rose-100 text-rose-700 border-0 font-bold text-sm">
+                                        {player.goals || 0}
+                                      </Badge>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })()}
+                  </TabsContent>
+
+                  {/* Assistman */}
+                  <TabsContent value="assists">
+                    {(() => {
+                      const top = [...players]
+                        .filter(p => (p.assists || 0) > 0)
+                        .sort((a, b) => (b.assists || 0) - (a.assists || 0))
+                        .slice(0, 50);
+                      return top.length === 0 ? (
+                        <div className="text-center py-12">
+                          <Medal className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                          <p className="text-slate-500">Nessun assist registrato</p>
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full">
+                            <thead>
+                              <tr className="border-b text-sm text-slate-500">
+                                <th className="text-left py-2 px-2 w-12">#</th>
+                                <th className="text-left py-2 px-2">Giocatore</th>
+                                <th className="text-left py-2 px-2 hidden sm:table-cell">Squadra</th>
+                                <th className="text-center py-2 px-2 w-16">Ruolo</th>
+                                <th className="text-center py-2 px-2 w-20">🅰️ Assist</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {top.map((player, i) => {
+                                const team = teams.find(t => t.id === player.team_id);
+                                return (
+                                  <tr key={player.id} className={`border-b hover:bg-slate-50 ${i < 3 ? 'bg-amber-50/50' : ''}`}>
+                                    <td className="py-3 px-2">
+                                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                                        i === 0 ? 'bg-yellow-100 text-yellow-700' :
+                                        i === 1 ? 'bg-slate-100 text-slate-600' :
+                                        i === 2 ? 'bg-orange-100 text-orange-600' :
+                                        'bg-slate-50 text-slate-400'
+                                      }`}>
+                                        {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}
+                                      </div>
+                                    </td>
+                                    <td className="py-3 px-2 font-medium text-slate-800">
+                                      {player.first_name} {player.last_name}
+                                    </td>
+                                    <td className="py-3 px-2 text-slate-500 text-sm hidden sm:table-cell">
+                                      {team?.name || 'Svincolato'}
+                                    </td>
+                                    <td className="py-3 px-2 text-center">
+                                      {player.role && <Badge className="bg-blue-100 text-blue-700 border-0 text-xs">{player.role}</Badge>}
+                                    </td>
+                                    <td className="py-3 px-2 text-center">
+                                      <Badge className="bg-blue-100 text-blue-700 border-0 font-bold text-sm">
+                                        {player.assists || 0}
+                                      </Badge>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })()}
+                  </TabsContent>
+                </Tabs>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         {/* Tab Squalificati */}
