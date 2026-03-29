@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react';
-import { base44 } from '@/api/base44Client';
 import { supabase } from '@/api/supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -142,10 +141,12 @@ function PlayerImporter({ allPlayers, queryClient }) {
           existing = existingMap.get(`${row.first_name.toLowerCase().trim()}|${row.last_name.toLowerCase().trim()}`);
         }
         if (existing) {
-          await base44.entities.Player.update(existing.id, fields);
+          const { error } = await supabase.from('players').update(fields).eq('id', existing.id);
+          if (error) throw error;
           rep.updated++;
         } else {
-          await base44.entities.Player.create({ ...fields, status: 'approved' });
+          const { error } = await supabase.from('players').insert({ ...fields, status: 'approved' });
+          if (error) throw error;
           rep.created++;
         }
       } catch (err) {
@@ -297,12 +298,12 @@ function MercatoManager() {
 
   const { data: appSettings = [] } = useQuery({
     queryKey: ['appSettings'],
-    queryFn: () => base44.entities.AppSettings.list()
+    queryFn: async () => { const { data } = await supabase.from('app_settings').select('*'); return data || []; }
   });
 
   const { data: auctions = [] } = useQuery({
     queryKey: ['auctionsAdmin'],
-    queryFn: () => base44.entities.Auction.list('-created_date')
+    queryFn: async () => { const { data } = await supabase.from('auctions').select('*').order('created_at', { ascending: false }); return data || []; }
   });
 
   // Sessioni di aste (raggruppate per auction_session_name)
@@ -326,9 +327,9 @@ function MercatoManager() {
       const newStatus = mercatoOpen ? 'closed' : 'open';
       const existing = appSettings.find(s => s.key === 'mercato_status');
       if (existing) {
-        await base44.entities.AppSettings.update(existing.id, { value: newStatus });
+        await supabase.from('app_settings').update({ value: newStatus }).eq('id', existing.id);
       } else {
-        await base44.entities.AppSettings.create({ key: 'mercato_status', value: newStatus });
+        await supabase.from('app_settings').insert({ key: 'mercato_status', value: newStatus });
       }
       queryClient.invalidateQueries({ queryKey: ['appSettings'] });
       toast.dismiss(t);
@@ -342,9 +343,9 @@ function MercatoManager() {
   const saveSessionName = async (name) => {
     const existing = appSettings.find(s => s.key === 'mercato_session_name');
     if (existing) {
-      await base44.entities.AppSettings.update(existing.id, { value: name });
+      await supabase.from('app_settings').update({ value: name }).eq('id', existing.id);
     } else {
-      await base44.entities.AppSettings.create({ key: 'mercato_session_name', value: name });
+      await supabase.from('app_settings').insert({ key: 'mercato_session_name', value: name });
     }
     queryClient.invalidateQueries({ queryKey: ['appSettings'] });
   };
@@ -355,7 +356,7 @@ function MercatoManager() {
     try {
       const sessionAuctions = auctions.filter(a => a.auction_session_name === sessionName && a.status === 'active');
       for (const a of sessionAuctions) {
-        await base44.entities.Auction.update(a.id, { status: 'completed' });
+        await supabase.from('auctions').update({ status: 'completed' }).eq('id', a.id);
       }
       queryClient.invalidateQueries({ queryKey: ['auctionsAdmin'] });
       toast.dismiss(t);
@@ -373,7 +374,7 @@ function MercatoManager() {
       const sessionAuctions = auctions.filter(a => a.auction_session_name === sessionName && a.status === 'completed');
       const newEndTime = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
       for (const a of sessionAuctions) {
-        await base44.entities.Auction.update(a.id, { status: 'active', end_time: newEndTime });
+        await supabase.from('auctions').update({ status: 'active', end_time: newEndTime }).eq('id', a.id);
       }
       queryClient.invalidateQueries({ queryKey: ['auctionsAdmin'] });
       toast.dismiss(t);
@@ -405,8 +406,8 @@ function MercatoManager() {
               try {
                 const newStatus = censimentoOpen ? 'closed' : 'open';
                 const existing = appSettings.find(s => s.key === 'censimento_status');
-                if (existing) await base44.entities.AppSettings.update(existing.id, { value: newStatus });
-                else await base44.entities.AppSettings.create({ key: 'censimento_status', value: newStatus });
+                if (existing) await supabase.from('app_settings').update({ value: newStatus }).eq('id', existing.id);
+                else await supabase.from('app_settings').insert({ key: 'censimento_status', value: newStatus });
                 queryClient.invalidateQueries({ queryKey: ['appSettings'] });
                 toast.dismiss(t);
                 toast.success(newStatus === 'open' ? 'Censimento aperto!' : 'Censimento chiuso!');
@@ -414,8 +415,8 @@ function MercatoManager() {
             };
             const saveCensimentoName = async (name) => {
               const existing = appSettings.find(s => s.key === 'censimento_session_name');
-              if (existing) await base44.entities.AppSettings.update(existing.id, { value: name });
-              else await base44.entities.AppSettings.create({ key: 'censimento_session_name', value: name });
+              if (existing) await supabase.from('app_settings').update({ value: name }).eq('id', existing.id);
+              else await supabase.from('app_settings').insert({ key: 'censimento_session_name', value: name });
               queryClient.invalidateQueries({ queryKey: ['appSettings'] });
             };
             return (
@@ -458,8 +459,8 @@ function MercatoManager() {
               try {
                 const newStatus = regOpen ? 'closed' : 'open';
                 const existing = appSettings.find(s => s.key === 'registrations_status');
-                if (existing) await base44.entities.AppSettings.update(existing.id, { value: newStatus });
-                else await base44.entities.AppSettings.create({ key: 'registrations_status', value: newStatus });
+                if (existing) await supabase.from('app_settings').update({ value: newStatus }).eq('id', existing.id);
+                else await supabase.from('app_settings').insert({ key: 'registrations_status', value: newStatus });
                 queryClient.invalidateQueries({ queryKey: ['appSettings'] });
                 toast.dismiss(t);
                 toast.success(newStatus === 'open' ? 'Registrazioni aperte!' : 'Registrazioni chiuse!');
@@ -645,7 +646,7 @@ function GettoniManager({ teams }) {
 
   const { data: appSettings = [], refetch } = useQuery({
     queryKey: ['appSettings'],
-    queryFn: () => base44.entities.AppSettings.list()
+    queryFn: async () => { const { data } = await supabase.from('app_settings').select('*'); return data || []; }
   });
 
   const getGettoni = (teamId) => {
@@ -660,9 +661,9 @@ function GettoniManager({ teams }) {
     try {
       const existing = appSettings.find(s => s.key === `gettoni_${teamId}`);
       if (existing) {
-        await base44.entities.AppSettings.update(existing.id, { value: String(newVal) });
+        await supabase.from('app_settings').update({ value: String(newVal) }).eq('id', existing.id);
       } else {
-        await base44.entities.AppSettings.create({ key: `gettoni_${teamId}`, value: String(newVal) });
+        await supabase.from('app_settings').insert({ key: `gettoni_${teamId}`, value: String(newVal) });
       }
       await refetch();
       queryClient.invalidateQueries({ queryKey: ['appSettings'] });
@@ -677,9 +678,9 @@ function GettoniManager({ teams }) {
     for (const team of teams) {
       const existing = appSettings.find(s => s.key === `gettoni_${team.id}`);
       if (existing) {
-        await base44.entities.AppSettings.update(existing.id, { value: '5' });
+        await supabase.from('app_settings').update({ value: '5' }).eq('id', existing.id);
       } else {
-        await base44.entities.AppSettings.create({ key: `gettoni_${team.id}`, value: '5' });
+        await supabase.from('app_settings').insert({ key: `gettoni_${team.id}`, value: '5' });
       }
     }
     await refetch();
@@ -786,28 +787,35 @@ export default function AdminPanel() {
 
   useEffect(() => {
     const loadUser = async () => {
-      try { const u = await base44.auth.me(); setUser(u); }
-      catch (e) { base44.auth.redirectToLogin(); }
+      try {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (!authUser) { window.location.href = '/login'; return; }
+        const { data } = await supabase.from('user_roles').select('*').eq('email', authUser.email).single();
+        if (data) setUser(data);
+        else window.location.href = '/login';
+      }
+      catch (e) { window.location.href = '/login'; }
     };
     loadUser();
   }, []);
 
   const isAdmin = user?.role === 'admin';
 
-  const { data: leagues = [] }        = useQuery({ queryKey:['leagues'],        queryFn:() => base44.entities.League.list() });
-  const { data: pendingPlayers = [] } = useQuery({ queryKey:['pendingPlayers'], queryFn:() => base44.entities.Player.filter({ status:'pending' }) });
-  const { data: teams = [] }          = useQuery({ queryKey:['teams'],          queryFn:() => base44.entities.Team.list() });
-  const { data: allPlayers = [] }     = useQuery({ queryKey:['allPlayers'],     queryFn:() => base44.entities.Player.list() });
-  const { data: competitions = [] }   = useQuery({ queryKey:['competitions'],   queryFn:() => base44.entities.Competition.list() });
-  const { data: matches = [] }        = useQuery({ queryKey:['matches'],        queryFn:() => base44.entities.Match.list() });
+  const { data: leagues = [] }        = useQuery({ queryKey:['leagues'],        queryFn: async () => { const { data } = await supabase.from('leagues').select('*'); return data || []; } });
+  const { data: pendingPlayers = [] } = useQuery({ queryKey:['pendingPlayers'], queryFn: async () => { const { data } = await supabase.from('players').select('*').eq('status','pending'); return data || []; } });
+  const { data: teams = [] }          = useQuery({ queryKey:['teams'],          queryFn: async () => { const { data } = await supabase.from('teams').select('*'); return data || []; } });
+  const { data: allPlayers = [] }     = useQuery({ queryKey:['allPlayers'],     queryFn: async () => { const { data } = await supabase.from('players').select('*'); return data || []; } });
+  const { data: competitions = [] }   = useQuery({ queryKey:['competitions'],   queryFn: async () => { const { data } = await supabase.from('competitions').select('*'); return data || []; } });
+  const { data: matches = [] }        = useQuery({ queryKey:['matches'],        queryFn: async () => { const { data } = await supabase.from('matches').select('*'); return data || []; } });
 
   const createLeagueMutation = useMutation({
     mutationFn: async (data) => {
-      const league = await base44.entities.League.create(data);
-      const competition = await base44.entities.Competition.create({
-        name: data.name, league_id: league.id, season: data.season,
-        format: data.competition_format, participating_teams: data.participating_teams, status: 'active'
-      });
+      const { data: leagueRow, error: leagueErr } = await supabase.from('leagues').insert({ name: data.name, season: data.season, default_budget: data.default_budget, participating_teams: data.participating_teams, competition_format: data.competition_format, logo_url: data.logo_url || null, prize_type: data.prize_type || 'campionato', status: 'active' }).select().single();
+      if (leagueErr) throw leagueErr;
+      const league = leagueRow;
+      const { data: compRow, error: compErr } = await supabase.from('competitions').insert({ name: data.name, league_id: league.id, season: data.season, format: data.competition_format, participating_teams: data.participating_teams, status: 'active' }).select().single();
+      if (compErr) throw compErr;
+      const competition = compRow;
       if (data.participating_teams?.length >= 2) {
         let matchesToCreate = [];
         const teamsData = teams.filter(t => data.participating_teams.includes(t.id));
@@ -824,7 +832,7 @@ export default function AdminPanel() {
           const { generateChampionsSwiss } = await import('../components/competition/CompetitionGenerator');
           matchesToCreate = generateChampionsSwiss(teamsData, league.id, data.season);
         }
-        if (matchesToCreate.length > 0) await base44.entities.Match.bulkCreate(matchesToCreate.map(m => ({ ...m, competition_id: competition.id })));
+        if (matchesToCreate.length > 0) await supabase.from('matches').insert(matchesToCreate.map(m => ({ ...m, competition_id: competition.id })));
       }
       return league;
     },
@@ -840,11 +848,11 @@ export default function AdminPanel() {
 
   const deleteLeagueMutation = useMutation({
     mutationFn: async (leagueId) => {
-      const ms = await base44.entities.Match.filter({ league_id: leagueId });
-      await Promise.all(ms.map(m => base44.entities.Match.delete(m.id)));
-      await base44.entities.League.delete(leagueId);
+      await supabase.from('matches').delete().eq('league_id', leagueId);
+      await supabase.from('competitions').delete().eq('league_id', leagueId);
+      await supabase.from('leagues').delete().eq('id', leagueId);
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey:['leagues'] }); queryClient.invalidateQueries({ queryKey:['matches'] }); toast.success('Lega eliminata'); }
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey:['leagues'] }); queryClient.invalidateQueries({ queryKey:['matches'] }); queryClient.invalidateQueries({ queryKey:['competitions'] }); toast.success('Lega eliminata'); }
   });
 
   const closeLeagueMutation = useMutation({
@@ -853,11 +861,12 @@ export default function AdminPanel() {
 
       // 1. Azzera cartellini gialli accumulati
       const playersWithYellows = allPlayers.filter(p => p.yellow_cards_accumulated > 0);
-      await Promise.all(playersWithYellows.map(p => base44.entities.Player.update(p.id, { yellow_cards_accumulated: 0 })));
+      await Promise.all(playersWithYellows.map(p =>
+        supabase.from('players').update({ yellow_cards_accumulated: 0 }).eq('id', p.id)
+      ));
 
       // 2. Elimina squalifiche attive
-      const suspensions = await base44.entities.PlayerStatus.filter({ status_type: 'suspended' });
-      await Promise.all(suspensions.map(s => base44.entities.PlayerStatus.delete(s.id)));
+      await supabase.from('player_statuses').delete().eq('status_type', 'suspended');
 
       // 3. Premi finali in base al tipo configurato
       const prizeType = league?.prize_type || 'nessuno';
@@ -933,7 +942,7 @@ export default function AdminPanel() {
       // se prizeType === 'nessuno' o 'supercoppa' non fa nulla
 
       // 4. Chiudi la lega
-      await base44.entities.League.update(leagueId, { status: 'completed' });
+      await supabase.from('leagues').update({ status: 'completed' }).eq('id', leagueId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey:['leagues'] });
@@ -944,7 +953,7 @@ export default function AdminPanel() {
   });
 
   const updateCompetitionMutation = useMutation({
-    mutationFn: async ({ id, data }) => { await base44.entities.Competition.update(id, data); },
+    mutationFn: async ({ id, data }) => { await supabase.from('competitions').update(data).eq('id', id); },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey:['competitions'] }); toast.success('Competizione aggiornata'); setShowCompetitionEditModal(false); setEditingCompetition(null); }
   });
 
@@ -1005,7 +1014,30 @@ export default function AdminPanel() {
     if (!window.confirm(`Generare il turno successivo per "${competition.name}"?`)) return;
     setGeneratingKnockout(true);
     try {
-      await base44.functions.invoke('generateNextKnockoutRound', { competition_id: competitionId });
+      // Genera il prossimo turno knockout direttamente con Supabase
+      const { data: allCompMatches } = await supabase.from('matches').select('*').eq('competition_id', competitionId).eq('status', 'completed');
+      if (!allCompMatches || allCompMatches.length === 0) throw new Error('Nessuna partita completata');
+      const latestMatchday = Math.max(...allCompMatches.map(m => m.matchday));
+      const latestRound = allCompMatches.filter(m => m.matchday === latestMatchday);
+      const winners = latestRound.map(m => m.home_score > m.away_score ? m.home_team_id : m.away_team_id);
+      if (winners.length === 1) { toast.success('Competizione completata!'); queryClient.invalidateQueries({ queryKey:['matches'] }); return; }
+      const nextMatchday = latestMatchday + 1;
+      const { data: allTeams } = await supabase.from('teams').select('id,name');
+      const getTeamName = (id) => allTeams?.find(t => t.id === id)?.name || '';
+      const nextMatches = [];
+      for (let i = 0; i < winners.length; i += 2) {
+        if (winners[i] && winners[i+1]) {
+          nextMatches.push({
+            league_id: competition.league_id, competition_id: competitionId,
+            season: competition.season, matchday: nextMatchday,
+            stage: winners.length === 2 ? 'final' : winners.length === 4 ? 'semifinal' : 'knockout',
+            home_team_id: winners[i], home_team_name: getTeamName(winners[i]),
+            away_team_id: winners[i+1], away_team_name: getTeamName(winners[i+1]),
+            status: 'scheduled'
+          });
+        }
+      }
+      if (nextMatches.length > 0) await supabase.from('matches').insert(nextMatches);
       queryClient.invalidateQueries({ queryKey:['matches'] });
       toast.success('Turno successivo generato');
     } catch (error) { toast.error('Errore: ' + error.message); }
@@ -1322,8 +1354,17 @@ export default function AdminPanel() {
               <Button onClick={async () => {
                 setLoadingDuplicates(true);
                 try {
-                  const result = await base44.functions.invoke('findDuplicatePlayers', {});
-                  const dupes = result.data?.duplicates || result.duplicates || [];
+                  // Trova duplicati direttamente dai dati in memoria
+                  const allP = allPlayers;
+                  const groups = {};
+                  allP.forEach(p => {
+                    const key = `${p.first_name?.toLowerCase()}_${p.last_name?.toLowerCase()}`;
+                    if (!groups[key]) groups[key] = [];
+                    groups[key].push(p);
+                  });
+                  const dupes = Object.entries(groups)
+                    .filter(([k, ps]) => ps.length > 1)
+                    .map(([k, ps]) => ({ name: `${ps[0].first_name} ${ps[0].last_name}`, players: ps }));
                   setDuplicates(dupes);
                   if (dupes.length === 0) toast.success('Nessun duplicato trovato');
                   else toast.info(`Trovati ${dupes.length} gruppi di duplicati`);
@@ -1409,7 +1450,7 @@ export default function AdminPanel() {
                               await supabase.from('budget_transactions').update({ related_player_id: null }).eq('related_player_id', id);
                               await supabase.from('matches').update({ mvp_player_id: null }).eq('mvp_player_id', id);
                               await supabase.from('transfers').update({ player_id: null }).eq('player_id', id);
-                              await base44.entities.Player.delete(id);
+                              await supabase.from('players').delete().eq('id', id);
                               deleted++;
                             } catch (e) {
                               console.error('Errore eliminazione giocatore', id, e.message);
@@ -1467,8 +1508,31 @@ export default function AdminPanel() {
                 onClick={async () => {
                   const t = toast.loading('Calcolo valori in corso...');
                   try {
-                    const allPlayers = await base44.entities.Player.list();
-                    const result = await base44.functions.invoke('updatePlayerMarketValueAndSalary', { players: allPlayers });
+                    const calculateValue = (ovr, age) => {
+                      if (!ovr || ovr < 40) return 500000;
+                      if (ovr >= 90 && age >= 23 && age <= 28) return Math.min(150000000, 80000000 + (ovr-90)*14000000 + (28-Math.abs(age-25))*1000000);
+                      if (ovr >= 85 && ovr < 90 && age < 25) return Math.min(50000000, 20000000 + (ovr-85)*6000000 + (25-age)*1000000);
+                      if (ovr >= 85) return Math.min(80000000, 30000000 + (ovr-85)*7000000);
+                      if (ovr >= 80) return Math.min(50000000, 10000000 + (ovr-80)*8000000);
+                      return Math.max(0, Math.min(30000000, 1000000 + (ovr-60)*400000 + Math.max(0,30-age)*200000));
+                    };
+                    const calculateSalary = (ovr) => {
+                      if (!ovr || ovr < 40) return 100000;
+                      if (ovr >= 90) return 10000000; if (ovr >= 88) return 7000000;
+                      if (ovr >= 85) return 5000000; if (ovr >= 82) return 3000000;
+                      if (ovr >= 75) return 1500000; if (ovr >= 65) return 500000;
+                      return 100000;
+                    };
+                    let updatedCount = 0;
+                    for (const p of allPlayers) {
+                      const ovr = p.overall_rating || 0; const age = p.age || 25;
+                      const pv = calculateValue(ovr, age); const sal = calculateSalary(ovr);
+                      if (p.player_value !== pv || p.salary !== sal) {
+                        await supabase.from('players').update({ player_value: pv, salary: sal }).eq('id', p.id);
+                        updatedCount++;
+                      }
+                    }
+                    const result = { updated: updatedCount, skipped: allPlayers.length - updatedCount };
                     toast.dismiss(t);
                     toast.success(`Aggiornati ${result.updated || 0} giocatori`);
                     queryClient.invalidateQueries({ queryKey: ['players'] });
@@ -1565,10 +1629,10 @@ export default function AdminPanel() {
                     onClick={async () => {
                       setSavingPlayerValue(true);
                       try {
-                        await base44.entities.Player.update(editingPlayerValue.id, {
+                        await supabase.from('players').update({
                           player_value: editingPlayerValue.player_value,
                           salary: editingPlayerValue.salary
-                        });
+                        }).eq('id', editingPlayerValue.id);
                         queryClient.invalidateQueries({ queryKey: ['allPlayers'] });
                         toast.success(`Valori aggiornati per ${editingPlayerValue.name}`);
                         setEditingPlayerValue(null);

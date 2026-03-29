@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
 import { supabase } from '@/api/supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -65,7 +64,12 @@ export default function Calendar() {
 
   useEffect(() => {
     const loadUser = async () => {
-      try { const userData = await base44.auth.me(); setUser(userData); } catch (e) {}
+      try {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (!authUser) return;
+        const { data } = await supabase.from('user_roles').select('*').eq('email', authUser.email).single();
+        if (data) setUser(data);
+      } catch (e) {}
     };
     loadUser();
   }, []);
@@ -73,15 +77,15 @@ export default function Calendar() {
   const isAdmin = user?.role === 'admin';
   const isController = user?.role === 'controller' || user?.role === 'controllore';
 
-  const { data: leagues = [] } = useQuery({ queryKey: ['leagues'], queryFn: () => base44.entities.League.list() });
-  const { data: competitions = [] } = useQuery({ queryKey: ['competitions'], queryFn: () => base44.entities.Competition.list() });
-  const { data: teams = [] } = useQuery({ queryKey: ['teams'], queryFn: () => base44.entities.Team.list() });
-  const { data: matches = [] } = useQuery({ queryKey: ['matches'], queryFn: () => base44.entities.Match.list() });
-  const { data: players = [] } = useQuery({ queryKey: ['players'], queryFn: () => base44.entities.Player.filter({ status: 'approved' }) });
-  const { data: playerStatuses = [] } = useQuery({ queryKey: ['playerStatuses'], queryFn: () => base44.entities.PlayerStatus.list() });
+  const { data: leagues = [] } = useQuery({ queryKey: ['leagues'], queryFn: async () => { const { data } = await supabase.from('leagues').select('*'); return data || []; } });
+  const { data: competitions = [] } = useQuery({ queryKey: ['competitions'], queryFn: async () => { const { data } = await supabase.from('competitions').select('*'); return data || []; } });
+  const { data: teams = [] } = useQuery({ queryKey: ['teams'], queryFn: async () => { const { data } = await supabase.from('teams').select('*'); return data || []; } });
+  const { data: matches = [] } = useQuery({ queryKey: ['matches'], queryFn: async () => { const { data } = await supabase.from('matches').select('*'); return data || []; } });
+  const { data: players = [] } = useQuery({ queryKey: ['players'], queryFn: async () => { const { data } = await supabase.from('players').select('*').eq('status', 'approved'); return data || []; } });
+  const { data: playerStatuses = [] } = useQuery({ queryKey: ['playerStatuses'], queryFn: async () => { const { data } = await supabase.from('player_statuses').select('*'); return data || []; } });
   const { data: rawStandings = [] } = useQuery({
     queryKey: ['standings', selectedLeague],
-    queryFn: () => base44.entities.Standing.filter({ league_id: selectedLeague }),
+    queryFn: async () => { const { data } = await supabase.from('standings').select('*').eq('league_id', selectedLeague); return data || []; },
     enabled: !!selectedLeague
   });
 
@@ -93,7 +97,10 @@ export default function Calendar() {
   }, [leagues, selectedLeague]);
 
   const createMatchesMutation = useMutation({
-    mutationFn: (data) => base44.entities.Match.bulkCreate(data),
+    mutationFn: async (data) => {
+      const { error } = await supabase.from('matches').insert(data);
+      if (error) throw error;
+    },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['matches'] }); toast.success('Calendario generato con successo'); }
   });
 
@@ -233,7 +240,7 @@ export default function Calendar() {
       };
 
       // 1. Aggiorna partita
-      operations.push(base44.entities.Match.update(selectedMatch.id, {
+      operations.push(supabase.from('matches').update({
         home_score: homeScore, away_score: awayScore, status: 'completed',
         scorers: data.scorers || [],
         assists: data.assists?.filter(a => a && a.player_id) || [],
@@ -245,7 +252,7 @@ export default function Calendar() {
         away_goalkeeper_rating: data.away_goalkeeper_rating ? parseFloat(data.away_goalkeeper_rating) : null,
         cards: data.cards || [], injuries: data.injuries || [],
         photos: data.photos || [], stream_link: data.stream_link || '', notes: data.notes || ''
-      }));
+      }).eq('id', selectedMatch.id));
 
       // Reset vecchie statistiche se modifica
       if (!isFirstSave) {
@@ -253,7 +260,7 @@ export default function Calendar() {
           for (const oldScorer of selectedMatch.scorers) {
             if (oldScorer.player_id && !oldScorer.is_own_goal) {
               const player = allMatchPlayers.find(p => p.id === oldScorer.player_id);
-              if (player) operations.push(base44.entities.Player.update(oldScorer.player_id, { goals: Math.max(0, (parseInt(player.goals) || 0) - 1) }));
+              if (player) operations.push(supabase.from('players').update({ goals: Math.max(0, (parseInt(player.goals) || 0) - 1) }).eq('id', oldScorer.player_id));
             }
           }
         }
@@ -261,13 +268,13 @@ export default function Calendar() {
           for (const oldAssist of selectedMatch.assists) {
             if (oldAssist?.player_id) {
               const player = allMatchPlayers.find(p => p.id === oldAssist.player_id);
-              if (player) operations.push(base44.entities.Player.update(oldAssist.player_id, { assists: Math.max(0, (parseInt(player.assists) || 0) - 1) }));
+              if (player) operations.push(supabase.from('players').update({ assists: Math.max(0, (parseInt(player.assists) || 0) - 1) }).eq('id', oldAssist.player_id));
             }
           }
         }
         if (selectedMatch.mvp_player_id) {
           const oldMvp = allMatchPlayers.find(p => p.id === selectedMatch.mvp_player_id);
-          if (oldMvp) operations.push(base44.entities.Player.update(selectedMatch.mvp_player_id, { mvp_count: Math.max(0, (parseInt(oldMvp.mvp_count) || 0) - 1) }));
+          if (oldMvp) operations.push(supabase.from('players').update({ mvp_count: Math.max(0, (parseInt(oldMvp.mvp_count) || 0) - 1) }).eq('id', selectedMatch.mvp_player_id));
         }
       }
 
@@ -275,20 +282,20 @@ export default function Calendar() {
       for (const scorer of data.scorers || []) {
         if (scorer.player_id && !scorer.is_own_goal) {
           const player = allMatchPlayers.find(p => p.id === scorer.player_id);
-          if (player) operations.push(base44.entities.Player.update(scorer.player_id, { goals: (parseInt(player.goals) || 0) + 1 }));
+          if (player) operations.push(supabase.from('players').update({ goals: (parseInt(player.goals) || 0) + 1 }).eq('id', scorer.player_id));
         }
       }
       // Assist
       for (const assist of data.assists || []) {
         if (assist?.player_id) {
           const player = allMatchPlayers.find(p => p.id === assist.player_id);
-          if (player) operations.push(base44.entities.Player.update(assist.player_id, { assists: (parseInt(player.assists) || 0) + 1 }));
+          if (player) operations.push(supabase.from('players').update({ assists: (parseInt(player.assists) || 0) + 1 }).eq('id', assist.player_id));
         }
       }
       // MVP
       if (data.mvp_player_id) {
         const mvpPlayer = allMatchPlayers.find(p => p.id === data.mvp_player_id);
-        if (mvpPlayer) operations.push(base44.entities.Player.update(data.mvp_player_id, { mvp_count: (parseInt(mvpPlayer.mvp_count) || 0) + 1 }));
+        if (mvpPlayer) operations.push(supabase.from('players').update({ mvp_count: (parseInt(mvpPlayer.mvp_count) || 0) + 1 }).eq('id', data.mvp_player_id));
       }
 
       // === CARTELLINI ===
@@ -304,21 +311,21 @@ export default function Calendar() {
 
         if (card.type === 'yellow') {
           const newYellowCount = (player.yellow_cards_accumulated || 0) + 1;
-          operations.push(base44.entities.Player.update(card.player_id, { yellow_cards_accumulated: newYellowCount }));
+          operations.push(supabase.from('players').update({ yellow_cards_accumulated: newYellowCount }).eq('id', card.player_id));
           if (newYellowCount >= 2) {
             const suspensionStartMatchday = calculateSuspensionStartMatchday(currentMatchday);
-            operations.push(base44.entities.PlayerStatus.create({
+            operations.push(supabase.from('player_statuses').insert({
               player_id: card.player_id, player_name: playerName, team_id: playerTeamId,
               status_type: 'suspended', matchdays_remaining: 1,
               reason: 'Squalifica per 2 ammonizioni', reason_type: 'yellow_card_accumulation',
               matchday_of_card: currentMatchday, suspension_start_matchday: suspensionStartMatchday
             }));
-            operations.push(base44.entities.Player.update(card.player_id, { yellow_cards_accumulated: 0 }));
+            operations.push(supabase.from('players').update({ yellow_cards_accumulated: 0 }).eq('id', card.player_id));
           }
         } else if (card.type === 'red') {
           const suspensionStartMatchday = calculateSuspensionStartMatchday(currentMatchday);
           const banRounds = card.rounds_ban || 1;
-          operations.push(base44.entities.PlayerStatus.create({
+          operations.push(supabase.from('player_statuses').insert({
             player_id: card.player_id, player_name: playerName, team_id: playerTeamId,
             status_type: 'suspended', matchdays_remaining: banRounds,
             reason: `Espulsione diretta (${banRounds} giornate)`, reason_type: 'red_card_direct',
@@ -334,25 +341,23 @@ export default function Calendar() {
         const playerTeamId = getPlayerTeamId(injury.player_id, injury.team_id);
         const matchdaysOut = parseInt(injury.matchdays_out) || 1;
         const suspensionStartMatchday = calculateSuspensionStartMatchday(currentMatchday);
-        operations.push(base44.entities.PlayerStatus.create({
+        operations.push(supabase.from('player_statuses').insert({
           player_id: injury.player_id, player_name: playerName, team_id: playerTeamId,
           status_type: 'injured', matchdays_remaining: matchdaysOut,
           reason: injury.reason && injury.reason.trim() ? injury.reason.trim() : 'Infortunio',
           reason_type: 'injury', matchday_of_card: currentMatchday, suspension_start_matchday: suspensionStartMatchday
         }));
-        operations.push(base44.entities.Player.update(injury.player_id, { player_status: 'injured' }));
+        operations.push(supabase.from('players').update({ player_status: 'injured' }).eq('id', injury.player_id));
       }
 
       // === CLASSIFICA — fetch diretto, sempre dati freschi ===
-      const standingsData = await base44.entities.Standing.filter({
-        league_id: selectedMatch.league_id
-      });
+      const { data: standingsData } = await supabase.from('standings').select('*').eq('league_id', selectedMatch.league_id);
 
       // Helper differenza reti
       const calcGD = (gf, ga) => (gf || 0) - (ga || 0);
 
       // ── Standing CASA ──
-      const homeStanding = standingsData.find(s => s.team_id === selectedMatch.home_team_id);
+      const homeStanding = standingsData?.find(s => s.team_id === selectedMatch.home_team_id);
       if (homeStanding) {
         let oldPlayed = 0, oldWon = 0, oldDraw = 0, oldLost = 0, oldGF = 0, oldGA = 0, oldPts = 0;
         if (!isFirstSave && selectedMatch.home_score != null && selectedMatch.away_score != null) {
@@ -365,7 +370,7 @@ export default function Calendar() {
         }
         const newGF = (homeStanding.goals_for || 0) - oldGF + homeScore;
         const newGA = (homeStanding.goals_against || 0) - oldGA + awayScore;
-        operations.push(base44.entities.Standing.update(homeStanding.id, {
+        operations.push(supabase.from('standings').update({
           played:         (homeStanding.played  || 0) - oldPlayed + 1,
           won:            (homeStanding.won     || 0) - oldWon    + (homeScore > awayScore ? 1 : 0),
           drawn:          (homeStanding.drawn   || 0) - oldDraw   + (homeScore === awayScore ? 1 : 0),
@@ -374,9 +379,9 @@ export default function Calendar() {
           goals_against:  newGA,
           goal_difference: calcGD(newGF, newGA),
           points:         (homeStanding.points  || 0) - oldPts    + homePoints
-        }));
+        }).eq('id', homeStanding.id));
       } else {
-        operations.push(base44.entities.Standing.create({
+        operations.push(supabase.from('standings').insert({
           league_id: selectedMatch.league_id,
           team_id: selectedMatch.home_team_id,
           team_name: homeTeam.name,
@@ -391,7 +396,7 @@ export default function Calendar() {
       }
 
       // ── Standing OSPITE ──
-      const awayStanding = standingsData.find(s => s.team_id === selectedMatch.away_team_id);
+      const awayStanding = standingsData?.find(s => s.team_id === selectedMatch.away_team_id);
       if (awayStanding) {
         let oldPlayed = 0, oldWon = 0, oldDraw = 0, oldLost = 0, oldGF = 0, oldGA = 0, oldPts = 0;
         if (!isFirstSave && selectedMatch.home_score != null && selectedMatch.away_score != null) {
@@ -404,7 +409,7 @@ export default function Calendar() {
         }
         const newGF = (awayStanding.goals_for || 0) - oldGF + awayScore;
         const newGA = (awayStanding.goals_against || 0) - oldGA + homeScore;
-        operations.push(base44.entities.Standing.update(awayStanding.id, {
+        operations.push(supabase.from('standings').update({
           played:         (awayStanding.played  || 0) - oldPlayed + 1,
           won:            (awayStanding.won     || 0) - oldWon    + (awayScore > homeScore ? 1 : 0),
           drawn:          (awayStanding.drawn   || 0) - oldDraw   + (homeScore === awayScore ? 1 : 0),
@@ -413,9 +418,9 @@ export default function Calendar() {
           goals_against:  newGA,
           goal_difference: calcGD(newGF, newGA),
           points:         (awayStanding.points  || 0) - oldPts    + awayPoints
-        }));
+        }).eq('id', awayStanding.id));
       } else {
-        operations.push(base44.entities.Standing.create({
+        operations.push(supabase.from('standings').insert({
           league_id: selectedMatch.league_id,
           team_id: selectedMatch.away_team_id,
           team_name: awayTeam.name,

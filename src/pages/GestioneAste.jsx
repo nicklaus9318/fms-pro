@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
 import { supabase } from '@/api/supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -66,34 +65,55 @@ export default function GestioneAste() {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    base44.auth.me().then(setUser).catch(() => {});
+    const loadUser = async () => {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) return;
+      const { data } = await supabase.from('user_roles').select('*').eq('email', authUser.email).single();
+      if (data) setUser(data);
+    };
+    loadUser();
   }, []);
 
   const isAdmin = user?.role === 'admin';
 
   const { data: freePlayers = [], isLoading: loadingPlayers } = useQuery({
     queryKey: ['freePlayersAuction'],
-    queryFn: () => base44.entities.Player.filter({ status: 'approved' })
+    queryFn: async () => {
+      const { data } = await supabase.from('players').select('*').eq('status', 'approved');
+      return data || [];
+    }
   });
 
   const { data: auctions = [] } = useQuery({
     queryKey: ['auctionsAdmin'],
-    queryFn: () => base44.entities.Auction.list('-created_date')
+    queryFn: async () => {
+      const { data } = await supabase.from('auctions').select('*').order('created_at', { ascending: false });
+      return data || [];
+    }
   });
 
   const { data: bids = [] } = useQuery({
     queryKey: ['allBids'],
-    queryFn: () => base44.entities.Bid.list('-created_date')
+    queryFn: async () => {
+      const { data } = await supabase.from('bids').select('*').order('created_at', { ascending: false });
+      return data || [];
+    }
   });
 
   const { data: teams = [] } = useQuery({
     queryKey: ['teams'],
-    queryFn: () => base44.entities.Team.list()
+    queryFn: async () => {
+      const { data } = await supabase.from('teams').select('*');
+      return data || [];
+    }
   });
 
   const { data: players = [] } = useQuery({
     queryKey: ['allPlayersAuction'],
-    queryFn: () => base44.entities.Player.filter({ status: 'approved' })
+    queryFn: async () => {
+      const { data } = await supabase.from('players').select('*').eq('status', 'approved');
+      return data || [];
+    }
   });
 
   const freeFilteredPlayers = freePlayers
@@ -143,7 +163,8 @@ export default function GestioneAste() {
           status: 'active',
         };
       });
-      await base44.entities.Auction.bulkCreate(auctionsToCreate);
+      const { error } = await supabase.from('auctions').insert(auctionsToCreate);
+      if (error) throw error;
       return auctionsToCreate.length;
     },
     onSuccess: (count) => {
@@ -286,7 +307,10 @@ export default function GestioneAste() {
   });
 
   const cancelAuctionMutation = useMutation({
-    mutationFn: (auctionId) => base44.entities.Auction.update(auctionId, { status: 'cancelled' }),
+    mutationFn: async (auctionId) => {
+      const { error } = await supabase.from('auctions').update({ status: 'cancelled' }).eq('id', auctionId);
+      if (error) throw error;
+    },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['auctionsAdmin'] }); toast.success('Asta annullata'); }
   });
 
@@ -296,13 +320,11 @@ export default function GestioneAste() {
     let errors = 0;
     for (const auction of closedAuctions) {
       try {
-        // 1. Cancella prima tutti i bid collegati (evita FK constraint violation)
         const auctionBids = bids.filter(b => b.auction_id === auction.id);
         for (const bid of auctionBids) {
-          await base44.entities.Bid.delete(bid.id);
+          await supabase.from('bids').delete().eq('id', bid.id);
         }
-        // 2. Poi cancella l'asta
-        await base44.entities.Auction.delete(auction.id);
+        await supabase.from('auctions').delete().eq('id', auction.id);
       } catch (e) {
         console.error('Errore eliminazione asta ' + auction.id + ':', e.message);
         errors++;
