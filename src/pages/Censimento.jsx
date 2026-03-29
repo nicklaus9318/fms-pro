@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/api/supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,23 @@ export default function Censimento() {
     overall_rating: '',
     id_sofifa: ''
   });
+
+  const [sofifaCheck, setSofifaCheck] = useState(null); // null | 'checking' | 'ok' | { name, status }
+
+  const checkSofifaId = async (id) => {
+    if (!id || String(id).trim().length < 4) { setSofifaCheck(null); return; }
+    setSofifaCheck('checking');
+    const { data } = await supabase
+      .from('players')
+      .select('first_name, last_name, status')
+      .eq('id_sofifa', String(id).trim())
+      .maybeSingle();
+    if (data) {
+      setSofifaCheck({ name: `${data.first_name} ${data.last_name}`, status: data.status });
+    } else {
+      setSofifaCheck('ok');
+    }
+  };
 
   const queryClient = useQueryClient();
 
@@ -82,10 +99,13 @@ export default function Censimento() {
   useEffect(() => {
     const loadUser = async () => {
       try {
-        const userData = await base44.auth.me();
-        setUser(userData);
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (!authUser) { window.location.href = '/login'; return; }
+        const { data } = await supabase.from('user_roles').select('*').eq('email', authUser.email).single();
+        if (data) setUser(data);
+        else window.location.href = '/login';
       } catch (e) {
-        base44.auth.redirectToLogin();
+        window.location.href = '/login';
       }
     };
     loadUser();
@@ -93,7 +113,7 @@ export default function Censimento() {
 
   const { data: appSettings = [] } = useQuery({
     queryKey: ['appSettings'],
-    queryFn: () => base44.entities.AppSettings.list()
+    queryFn: async () => { const { data } = await supabase.from('app_settings').select('*'); return data || []; }
   });
 
   const censimentoStatus = appSettings.find(s => s.key === 'censimento_status')?.value;
@@ -102,23 +122,40 @@ export default function Censimento() {
 
   const { data: myPlayers = [] } = useQuery({
     queryKey: ['myRegisteredPlayers', user?.email],
-    // Filtra per created_by in JS dopo aver preso tutti i giocatori dell'utente
-    // (Supabase non supporta filter su colonne non indicizzate in modo affidabile)
     queryFn: async () => {
       if (!user?.email) return [];
-      const all = await base44.entities.Player.filter({ created_by: user.email });
-      return all;
+      const { data } = await supabase.from('players').select('*').eq('created_by', user.email);
+      return data || [];
     },
     enabled: !!user
   });
 
   const createPlayerMutation = useMutation({
     mutationFn: async (data) => {
-      const player = await base44.entities.Player.create({
-        ...data,
-        status: 'pending',
-        created_by: user.email  // ← FIX: salva sempre l'email dell'utente corrente
-      });
+      // Controllo duplicato ID SoFIFA
+      if (data.id_sofifa) {
+        const { data: existing, error: checkErr } = await supabase
+          .from('players')
+          .select('id, first_name, last_name, status')
+          .eq('id_sofifa', String(data.id_sofifa).trim())
+          .maybeSingle();
+
+        if (checkErr) throw new Error('Errore verifica ID SoFIFA: ' + checkErr.message);
+
+        if (existing) {
+          const statusLabel = existing.status === 'pending' ? '(in attesa di approvazione)' : '(già approvato)';
+          throw new Error(
+            `ID SoFIFA già presente: ${existing.first_name} ${existing.last_name} ${statusLabel}. Non puoi registrare lo stesso giocatore due volte.`
+          );
+        }
+      }
+
+      const { data: player, error } = await supabase
+        .from('players')
+        .insert({ ...data, status: 'pending', created_by: user.email })
+        .select()
+        .single();
+      if (error) throw new Error(error.message);
       return player;
     },
     onSuccess: () => {
@@ -128,7 +165,7 @@ export default function Censimento() {
       toast.success('Giocatore registrato! Sarà disponibile dopo l\'approvazione.');
     },
     onError: (error) => {
-      toast.error('Errore nella registrazione: ' + error.message);
+      toast.error(error.message);
     }
   });
 
@@ -333,12 +370,34 @@ export default function Censimento() {
             <div>
               <Label htmlFor="id_sofifa">ID SoFIFA</Label>
               <Input id="id_sofifa" value={formData.id_sofifa}
-                onChange={(e) => setFormData({...formData, id_sofifa: e.target.value})} placeholder="123456" />
+                onChange={(e) => { setFormData({...formData, id_sofifa: e.target.value}); setSofifaCheck(null); }}
+                onBlur={(e) => checkSofifaId(e.target.value)}
+                placeholder="123456"
+                className={sofifaCheck && sofifaCheck !== 'ok' && sofifaCheck !== 'checking' ? 'border-red-400' : ''}
+              />
+              {sofifaCheck === 'checking' && (
+                <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Verifica in corso...
+                </p>
+              )}
+              {sofifaCheck === 'ok' && (
+                <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
+                  <CheckCircle className="w-3 h-3" /> ID disponibile
+                </p>
+              )}
+              {sofifaCheck && sofifaCheck !== 'ok' && sofifaCheck !== 'checking' && (
+                <p className="text-xs text-red-600 mt-1 font-medium">
+                  ⛔ Già presente: <strong>{sofifaCheck.name}</strong>
+                  {sofifaCheck.status === 'pending' ? ' (in attesa di approvazione)' : ' (approvato)'}
+                </p>
+              )}
               <p className="text-xs text-slate-500 mt-1">Genera automaticamente il link al profilo</p>
             </div>
             <div className="flex justify-end gap-3 pt-4">
               <Button type="button" variant="outline" onClick={() => setShowForm(false)}>Annulla</Button>
-              <Button type="button" onClick={handleSubmit} disabled={createPlayerMutation.isPending} className="gap-2">
+              <Button type="button" onClick={handleSubmit}
+                disabled={createPlayerMutation.isPending || (sofifaCheck && sofifaCheck !== 'ok' && sofifaCheck !== 'checking')}
+                className="gap-2">
                 {createPlayerMutation.isPending ? (
                   <><Loader2 className="w-4 h-4 animate-spin" />Registrazione...</>
                 ) : (
