@@ -42,10 +42,15 @@ const getSofifaFallbackUrl = (sofifaId) => {
 
 export default function GestioneAste() {
   const [user, setUser] = useState(null);
+  // Ricerca server-side — stato per i filtri
   const [searchPlayer, setSearchPlayer] = useState('');
+  const [searchInput, setSearchInput] = useState(''); // input UI, applicato con debounce
   const [filterRole, setFilterRole] = useState('all');
   const [filterOverallMin, setFilterOverallMin] = useState('');
   const [filterOverallMax, setFilterOverallMax] = useState('');
+  const [page, setPage] = useState(0); // paginazione
+  const PAGE_SIZE = 100;
+
   const [selectedPlayers, setSelectedPlayers] = useState([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showBidsModal, setShowBidsModal] = useState(false);
@@ -61,8 +66,18 @@ export default function GestioneAste() {
   const [selectedActiveAuctions, setSelectedActiveAuctions] = useState([]);
   const [closingBulk, setClosingBulk] = useState(false);
   const [deletingClosed, setDeletingClosed] = useState(false);
+  const [closingSession, setClosingSession] = useState(null);
 
   const queryClient = useQueryClient();
+
+  // Debounce ricerca: applica dopo 400ms
+  useEffect(() => {
+    const t = setTimeout(() => { setSearchPlayer(searchInput); setPage(0); }, 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  // Reset pagina quando cambiano i filtri
+  useEffect(() => { setPage(0); }, [filterRole, filterOverallMin, filterOverallMax]);
 
   useEffect(() => {
     const loadUser = async () => {
@@ -76,13 +91,37 @@ export default function GestioneAste() {
 
   const isAdmin = user?.role === 'admin';
 
-  const { data: freePlayers = [], isLoading: loadingPlayers } = useQuery({
-    queryKey: ['freePlayersAuction'],
+  // Query server-side: solo svincolati, filtrati, 100 alla volta
+  const { data: freePlayersData, isLoading: loadingPlayers } = useQuery({
+    queryKey: ['freePlayersAuction', searchPlayer, filterRole, filterOverallMin, filterOverallMax, page],
     queryFn: async () => {
-      const { data } = await supabase.from('players').select('id,first_name,last_name,role,age,overall_rating,player_value,team_id,id_sofifa,photo_url,status,created_by').eq('status', 'approved');
-      return data || [];
-    }
+      let q = supabase
+        .from('players')
+        .select('id,first_name,last_name,role,age,overall_rating,player_value,team_id,id_sofifa,photo_url,status,created_by', { count: 'exact' })
+        .eq('status', 'approved')
+        .is('team_id', null)
+        .order('overall_rating', { ascending: false })
+        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+
+      if (searchPlayer.trim()) {
+        q = q.ilike('last_name', `%${searchPlayer.trim()}%`);
+      }
+      if (filterRole !== 'all') q = q.eq('role', filterRole);
+      if (filterOverallMin) q = q.gte('overall_rating', parseInt(filterOverallMin));
+      if (filterOverallMax) q = q.lte('overall_rating', parseInt(filterOverallMax));
+
+      const { data, count, error } = await q;
+      if (error) throw error;
+      return { players: data || [], total: count || 0 };
+    },
+    enabled: isAdmin,
+    staleTime: 30 * 1000, // 30 secondi — i giocatori cambiano meno spesso
+    keepPreviousData: true,
   });
+
+  const freePlayers = freePlayersData?.players || [];
+  const totalFreePlayers = freePlayersData?.total || 0;
+  const totalPages = Math.ceil(totalFreePlayers / PAGE_SIZE);
 
   const { data: auctions = [] } = useQuery({
     queryKey: ['auctionsAdmin'],
@@ -116,16 +155,22 @@ export default function GestioneAste() {
     }
   });
 
-  const freeFilteredPlayers = freePlayers
-    .filter(p => !p.team_id)
-    .filter(p => {
-      const nameMatch = !searchPlayer || `${p.first_name} ${p.last_name}`.toLowerCase().includes(searchPlayer.toLowerCase());
-      const roleMatch = filterRole === 'all' || p.role === filterRole;
-      const minMatch = !filterOverallMin || (p.overall_rating || 0) >= parseInt(filterOverallMin);
-      const maxMatch = !filterOverallMax || (p.overall_rating || 0) <= parseInt(filterOverallMax);
-      return nameMatch && roleMatch && minMatch && maxMatch;
-    })
-    .sort((a, b) => (b.overall_rating || 0) - (a.overall_rating || 0));
+  // Sessioni attive: raggruppa le aste attive per nome sessione
+  const activeSessions = (() => {
+    const sessionMap = {};
+    auctions
+      .filter(a => a.status === 'active' && a.auction_session_name)
+      .forEach(a => {
+        const name = a.auction_session_name;
+        if (!sessionMap[name]) sessionMap[name] = { name, auctions: [], totalActive: 0 };
+        sessionMap[name].auctions.push(a);
+        sessionMap[name].totalActive++;
+      });
+    return Object.values(sessionMap);
+  })();
+
+  // Con server-side filtering non serve più filtrare client-side
+  const freeFilteredPlayers = freePlayers;
 
   const togglePlayer = (playerId) => {
     setSelectedPlayers(prev =>
@@ -139,6 +184,20 @@ export default function GestioneAste() {
     } else {
       setSelectedPlayers(freeFilteredPlayers.map(p => p.id));
     }
+  };
+
+  // Chiude tutte le aste di una sessione in bulk
+  const closeSession = async (sessionName) => {
+    if (!window.confirm(`Chiudere tutte le aste della sessione "${sessionName}"?`)) return;
+    setClosingSession(sessionName);
+    const sessionAuctions = auctions.filter(a => a.auction_session_name === sessionName && a.status === 'active');
+    let success = 0, errors = 0;
+    for (const auction of sessionAuctions) {
+      try { await closeAuctionMutation.mutateAsync(auction.id); success++; }
+      catch (e) { errors++; }
+    }
+    setClosingSession(null);
+    toast.success(`Sessione "${sessionName}": chiuse ${success} aste${errors > 0 ? `, ${errors} errori` : ''}`);
   };
 
   const createAuctionsMutation = useMutation({
@@ -340,7 +399,8 @@ export default function GestioneAste() {
     }
   };
 
-  const activeAuctions = auctions.filter(a => a.auction_type === 'sealed_bid' && a.status === 'active' && bids.some(b => b.auction_id === a.id && b.status === 'active'));
+  // Aste attive: tutte le sealed_bid attive (con o senza offerte)
+  const activeAuctions = auctions.filter(a => a.auction_type === 'sealed_bid' && a.status === 'active');
   const closedAuctions = auctions.filter(a => a.auction_type === 'sealed_bid' && (a.status === 'completed' || a.status === 'cancelled'));
 
   const toggleActiveAuction = (id) => {
@@ -405,6 +465,7 @@ export default function GestioneAste() {
       <Tabs defaultValue="players" className="space-y-6">
         <TabsList>
           <TabsTrigger value="players" className="flex items-center gap-2"><Users className="w-4 h-4" />Seleziona Giocatori</TabsTrigger>
+          <TabsTrigger value="sessions" className="flex items-center gap-2"><Gavel className="w-4 h-4" />Sessioni ({activeSessions.length})</TabsTrigger>
           <TabsTrigger value="active" className="flex items-center gap-2"><Clock className="w-4 h-4" />Aste Attive ({activeAuctions.length})</TabsTrigger>
           <TabsTrigger value="closed" className="flex items-center gap-2"><Trophy className="w-4 h-4" />Aste Chiuse</TabsTrigger>
         </TabsList>
@@ -416,7 +477,7 @@ export default function GestioneAste() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <Input placeholder="Cerca per nome..." value={searchPlayer} onChange={(e) => setSearchPlayer(e.target.value)} className="pl-9" />
+                  <Input placeholder="Cerca per cognome..." value={searchInput} onChange={(e) => setSearchInput(e.target.value)} className="pl-9" />
                 </div>
                 <Select value={filterRole} onValueChange={setFilterRole}>
                   <SelectTrigger><SelectValue placeholder="Ruolo" /></SelectTrigger>
@@ -447,12 +508,25 @@ export default function GestioneAste() {
             <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-purple-500" /></div>
           ) : (
             <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-              <div className="p-3 border-b bg-slate-50 flex items-center gap-3">
-                <Checkbox
-                  checked={selectedPlayers.length === freeFilteredPlayers.length && freeFilteredPlayers.length > 0}
-                  onCheckedChange={toggleAll}
-                />
-                <span className="text-sm text-slate-600 font-medium">{freeFilteredPlayers.length} svincolati disponibili</span>
+              <div className="p-3 border-b bg-slate-50 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <Checkbox
+                    checked={selectedPlayers.length === freeFilteredPlayers.length && freeFilteredPlayers.length > 0}
+                    onCheckedChange={toggleAll}
+                  />
+                  <span className="text-sm text-slate-600 font-medium">
+                    {loadingPlayers ? 'Caricamento...' : `${freeFilteredPlayers.length} su ${totalFreePlayers} svincolati`}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-slate-500">
+                  {totalPages > 1 && (
+                    <>
+                      <Button size="sm" variant="outline" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0 || loadingPlayers}>←</Button>
+                      <span>{page + 1} / {totalPages}</span>
+                      <Button size="sm" variant="outline" onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1 || loadingPlayers}>→</Button>
+                    </>
+                  )}
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -503,6 +577,56 @@ export default function GestioneAste() {
                   </div>
                 )}
               </div>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* TAB SESSIONI ATTIVE */}
+        <TabsContent value="sessions" className="space-y-4">
+          {activeSessions.length === 0 ? (
+            <Card className="border-dashed bg-slate-50">
+              <CardContent className="py-12 text-center">
+                <Gavel className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                <p className="text-slate-500">Nessuna sessione aperta</p>
+                <p className="text-xs text-slate-400 mt-1">Crea aste con un nome sessione per vederle qui</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {activeSessions.map(session => {
+                const sessionBids = bids.filter(b => session.auctions.some(a => a.id === b.auction_id) && b.status === 'active');
+                const teamsWithBids = new Set(sessionBids.map(b => b.team_id)).size;
+                const auctionsWithBids = new Set(sessionBids.map(b => b.auction_id)).size;
+                return (
+                  <Card key={session.name} className="border-0 shadow-sm border-l-4 border-l-purple-400">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between flex-wrap gap-3">
+                        <div>
+                          <p className="font-bold text-slate-800 text-lg">{session.name}</p>
+                          <div className="flex items-center gap-3 mt-1 flex-wrap">
+                            <Badge className="bg-purple-100 text-purple-700 border-0">{session.totalActive} aste attive</Badge>
+                            <Badge className="bg-blue-100 text-blue-700 border-0">{auctionsWithBids} con offerte</Badge>
+                            <Badge className="bg-emerald-100 text-emerald-700 border-0">{teamsWithBids} squadre hanno offerto</Badge>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            className="bg-emerald-600 hover:bg-emerald-700"
+                            onClick={() => closeSession(session.name)}
+                            disabled={closingSession === session.name}
+                          >
+                            {closingSession === session.name
+                              ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Chiusura...</>
+                              : <><CheckCircle className="w-4 h-4 mr-1" />Chiudi Sessione</>
+                            }
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           )}
         </TabsContent>
