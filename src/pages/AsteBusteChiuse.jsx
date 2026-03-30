@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/api/supabaseClient';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,27 +14,17 @@ import moment from 'moment';
 
 const ROLES = ['POR','DC','TS','TD','CDC','CC','COC','ES','ED','AS','AD','ATT'];
 
-const getSofifaPhotoUrl = (player) => {
-  if (player?.photo_url && typeof player.photo_url === 'string') return player.photo_url;
-  let sofifaId = player?.id_sofifa;
-  if (!sofifaId) return null;
-  sofifaId = String(sofifaId).trim();
-  if (sofifaId.includes('sofifa.com')) {
-    const match = sofifaId.match(/\/player\/(\d+)\//);
-    if (match) sofifaId = match[1];
-    else return null;
-  }
-  sofifaId = sofifaId.replace(/\D/g, '');
-  if (sofifaId.length < 4) return null;
-  // FotMob CDN - nessuna restrizione hotlink
-  return `https://images.fotmob.com/image_resources/playerimages/${sofifaId}.png`;
+const getSofifaPhotoUrl = (idSofifa) => {
+  if (!idSofifa) return null;
+  const id = String(idSofifa).replace(/\D/g, '');
+  if (id.length < 4) return null;
+  return `https://images.fotmob.com/image_resources/playerimages/${id}.png`;
 };
 
-const getSofifaFallbackUrl = (sofifaId) => {
-  if (!sofifaId) return null;
-  const id = String(sofifaId).replace(/\D/g, '');
+const getSofifaFallbackUrl = (idSofifa) => {
+  if (!idSofifa) return null;
+  const id = String(idSofifa).replace(/\D/g, '');
   if (id.length < 4) return null;
-  // Fallback FUTWIZ
   return `https://cdn.futwiz.com/assets/img/fc25/faces/${id}.png`;
 };
 
@@ -52,53 +42,64 @@ export default function AsteBusteChiuse() {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    base44.auth.me().then(setUser).catch(() => {});
+    const loadUser = async () => {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) return;
+      const { data: userData } = await supabase.from('user_roles').select('*').eq('email', authUser.email).single();
+      if (!userData) return;
+      setUser(userData);
+      // Carica subito la squadra dell'utente
+      const { data: teamData } = await supabase.from('teams').select('id,name,budget,owner_email').eq('owner_email', authUser.email).single();
+      if (teamData) setMyTeam(teamData);
+    };
+    loadUser();
   }, []);
 
+  // Aste attive con dati giocatore in join — nessun caricamento separato dei players
   const { data: auctions = [], isLoading } = useQuery({
     queryKey: ['sealedBidAuctions'],
-    queryFn: () => base44.entities.Auction.list('-created_date'),
-    refetchInterval: 30000
-  });
-
-  const { data: players = [] } = useQuery({
-    queryKey: ['playersAuction'],
-    queryFn: () => base44.entities.Player.filter({ status: 'approved' })
-  });
-
-  const { data: teams = [] } = useQuery({
-    queryKey: ['teamsAuction'],
-    queryFn: () => base44.entities.Team.list()
-  });
-
-  const { data: myBids = [] } = useQuery({
-    queryKey: ['myBids', user?.email],
     queryFn: async () => {
-      if (!myTeam) return [];
-      return base44.entities.Bid.filter({ team_id: myTeam.id });
+      const { data, error } = await supabase
+        .from('auctions')
+        .select(`
+          id, player_id, player_name, auction_type, auction_session_name,
+          status, starting_price, current_price, end_time, max_bids_per_team,
+          players!player_id (id, role, overall_rating, age, player_value, id_sofifa, photo_url)
+        `)
+        .eq('status', 'active')
+        .eq('auction_type', 'sealed_bid')
+        .gt('end_time', new Date().toISOString())
+        .order('end_time', { ascending: true });
+      if (error) throw error;
+      return data || [];
     },
-    enabled: !!myTeam
+    refetchInterval: 30000,
+    staleTime: 20 * 1000,
   });
 
-  useEffect(() => {
-    if (user && teams.length > 0) {
-      const team = teams.find(t => t.owner_email === user.email);
-      setMyTeam(team || null);
-    }
-  }, [user, teams]);
+  // Le mie offerte — solo quelle della mia squadra, non tutte
+  const { data: myBids = [] } = useQuery({
+    queryKey: ['myBids', myTeam?.id],
+    queryFn: async () => {
+      if (!myTeam?.id) return [];
+      const { data } = await supabase
+        .from('bids')
+        .select('id,auction_id,team_id,amount,status,bid_time')
+        .eq('team_id', myTeam.id)
+        .eq('status', 'active');
+      return data || [];
+    },
+    enabled: !!myTeam,
+  });
 
-  const sealedAuctions = auctions
-    .filter(a => a.auction_type === 'sealed_bid' && a.status === 'active')
-    .filter(a => new Date(a.end_time) > new Date())
-    .filter(a => {
-      const player = players.find(p => p.id === a.player_id);
-      const nameMatch = !searchAuction || a.player_name?.toLowerCase().includes(searchAuction.toLowerCase());
-      const roleMatch = filterRole === 'all' || player?.role === filterRole;
-      return nameMatch && roleMatch;
-    })
-    .sort((a, b) => new Date(a.end_time) - new Date(b.end_time));
+  // Filtra aste
+  const sealedAuctions = auctions.filter(a => {
+    const nameMatch = !searchAuction || a.player_name?.toLowerCase().includes(searchAuction.toLowerCase());
+    const roleMatch = filterRole === 'all' || a.players?.role === filterRole;
+    return nameMatch && roleMatch;
+  });
 
-  const myBidForAuction = (auctionId) => myBids.find(b => b.auction_id === auctionId && b.status === 'active');
+  const myBidForAuction = (auctionId) => myBids.find(b => b.auction_id === auctionId);
 
   const openBidModal = (auction) => {
     if (!myTeam) { toast.error('Non hai una squadra associata al tuo account'); return; }
@@ -122,14 +123,10 @@ export default function AsteBusteChiuse() {
     const maxBids = selectedAuction.max_bids_per_team;
     if (maxBids && maxBids > 0) {
       const sessionName = selectedAuction.auction_session_name;
-      // Conta offerte attive della squadra in questa sessione (escludi quella corrente se esiste)
-      const sessionAuctions = auctions.filter(a => a.auction_session_name === sessionName && a.status === 'active');
-      const sessionBids = myBids.filter(b =>
-        b.status === 'active' && sessionAuctions.some(a => a.id === b.auction_id)
-      );
+      const sessionAuctions = auctions.filter(a => a.auction_session_name === sessionName);
+      const sessionBids = myBids.filter(b => sessionAuctions.some(a => a.id === b.auction_id));
       const existingBid = myBidForAuction(selectedAuction.id);
-      const currentCount = existingBid ? sessionBids.length : sessionBids.length;
-      if (!existingBid && currentCount >= maxBids) {
+      if (!existingBid && sessionBids.length >= maxBids) {
         toast.error(`Hai raggiunto il limite di ${maxBids} offerte per questa sessione`);
         return;
       }
@@ -139,13 +136,13 @@ export default function AsteBusteChiuse() {
     try {
       const existing = myBidForAuction(selectedAuction.id);
       if (existing) {
-        await base44.entities.Bid.update(existing.id, { status: 'cancelled' });
+        await supabase.from('bids').update({ status: 'cancelled' }).eq('id', existing.id);
       }
-      await base44.entities.Bid.create({
+      await supabase.from('bids').insert({
         auction_id: selectedAuction.id,
         team_id: myTeam.id,
         team_name: myTeam.name,
-        amount: amount,
+        amount,
         bid_time: new Date().toISOString(),
         status: 'active',
         is_winning: false
@@ -227,8 +224,8 @@ export default function AsteBusteChiuse() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {sealedAuctions.map(auction => {
-            const player = players.find(p => p.id === auction.player_id);
-            const photoUrl = getSofifaPhotoUrl(player);
+            const player = auction.players; // dati dal join
+            const photoUrl = getSofifaPhotoUrl(player?.id_sofifa);
             const myBid = myBidForAuction(auction.id);
             const timeLeft = moment(auction.end_time).diff(moment(), 'hours');
             const isUrgent = timeLeft < 6;
@@ -313,8 +310,8 @@ export default function AsteBusteChiuse() {
             ) : (
               myBids.filter(b => b.status === 'active').map(bid => {
                 const auction = auctions.find(a => a.id === bid.auction_id);
-                const player = players.find(p => p.id === auction?.player_id);
-                const photoUrl = getSofifaPhotoUrl(player);
+                const player = auction?.players;
+                const photoUrl = getSofifaPhotoUrl(player?.id_sofifa);
                 const isExpired = auction && new Date(auction.end_time) <= new Date();
                 return (
                   <div key={bid.id} className={`flex items-center gap-3 p-3 rounded-xl border ${isExpired ? 'bg-slate-50 border-slate-200 opacity-60' : 'bg-white border-emerald-200'}`}>

@@ -42,15 +42,10 @@ const getSofifaFallbackUrl = (sofifaId) => {
 
 export default function GestioneAste() {
   const [user, setUser] = useState(null);
-  // Ricerca server-side — stato per i filtri
   const [searchPlayer, setSearchPlayer] = useState('');
-  const [searchInput, setSearchInput] = useState(''); // input UI, applicato con debounce
   const [filterRole, setFilterRole] = useState('all');
   const [filterOverallMin, setFilterOverallMin] = useState('');
   const [filterOverallMax, setFilterOverallMax] = useState('');
-  const [page, setPage] = useState(0); // paginazione
-  const PAGE_SIZE = 100;
-
   const [selectedPlayers, setSelectedPlayers] = useState([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showBidsModal, setShowBidsModal] = useState(false);
@@ -70,15 +65,6 @@ export default function GestioneAste() {
 
   const queryClient = useQueryClient();
 
-  // Debounce ricerca: applica dopo 400ms
-  useEffect(() => {
-    const t = setTimeout(() => { setSearchPlayer(searchInput); setPage(0); }, 400);
-    return () => clearTimeout(t);
-  }, [searchInput]);
-
-  // Reset pagina quando cambiano i filtri
-  useEffect(() => { setPage(0); }, [filterRole, filterOverallMin, filterOverallMax]);
-
   useEffect(() => {
     const loadUser = async () => {
       const { data: { user: authUser } } = await supabase.auth.getUser();
@@ -91,37 +77,20 @@ export default function GestioneAste() {
 
   const isAdmin = user?.role === 'admin';
 
-  // Query server-side: solo svincolati, filtrati, 100 alla volta
-  const { data: freePlayersData, isLoading: loadingPlayers } = useQuery({
-    queryKey: ['freePlayersAuction', searchPlayer, filterRole, filterOverallMin, filterOverallMax, page],
+  // Carica solo i svincolati (team_id IS NULL) — molto più leggero di tutti i 5000
+  const { data: freePlayers = [], isLoading: loadingPlayers } = useQuery({
+    queryKey: ['freePlayersAuction'],
     queryFn: async () => {
-      let q = supabase
+      const { data } = await supabase
         .from('players')
-        .select('id,first_name,last_name,role,age,overall_rating,player_value,team_id,id_sofifa,photo_url,status,created_by', { count: 'exact' })
+        .select('id,first_name,last_name,role,age,overall_rating,player_value,team_id,id_sofifa,photo_url,status,created_by')
         .eq('status', 'approved')
         .is('team_id', null)
-        .order('overall_rating', { ascending: false })
-        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
-
-      if (searchPlayer.trim()) {
-        q = q.ilike('last_name', `%${searchPlayer.trim()}%`);
-      }
-      if (filterRole !== 'all') q = q.eq('role', filterRole);
-      if (filterOverallMin) q = q.gte('overall_rating', parseInt(filterOverallMin));
-      if (filterOverallMax) q = q.lte('overall_rating', parseInt(filterOverallMax));
-
-      const { data, count, error } = await q;
-      if (error) throw error;
-      return { players: data || [], total: count || 0 };
+        .order('overall_rating', { ascending: false });
+      return data || [];
     },
     enabled: isAdmin,
-    staleTime: 30 * 1000, // 30 secondi — i giocatori cambiano meno spesso
-    keepPreviousData: true,
   });
-
-  const freePlayers = freePlayersData?.players || [];
-  const totalFreePlayers = freePlayersData?.total || 0;
-  const totalPages = Math.ceil(totalFreePlayers / PAGE_SIZE);
 
   const { data: auctions = [] } = useQuery({
     queryKey: ['auctionsAdmin'],
@@ -169,8 +138,14 @@ export default function GestioneAste() {
     return Object.values(sessionMap);
   })();
 
-  // Con server-side filtering non serve più filtrare client-side
-  const freeFilteredPlayers = freePlayers;
+  // Filtro client-side sui svincolati già caricati
+  const freeFilteredPlayers = freePlayers.filter(p => {
+    const nameMatch = !searchPlayer || `${p.first_name} ${p.last_name}`.toLowerCase().includes(searchPlayer.toLowerCase());
+    const roleMatch = filterRole === 'all' || p.role === filterRole;
+    const minMatch = !filterOverallMin || (p.overall_rating || 0) >= parseInt(filterOverallMin);
+    const maxMatch = !filterOverallMax || (p.overall_rating || 0) <= parseInt(filterOverallMax);
+    return nameMatch && roleMatch && minMatch && maxMatch;
+  });
 
   const togglePlayer = (playerId) => {
     setSelectedPlayers(prev =>
@@ -477,7 +452,7 @@ export default function GestioneAste() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <Input placeholder="Cerca per cognome..." value={searchInput} onChange={(e) => setSearchInput(e.target.value)} className="pl-9" />
+                  <Input placeholder="Cerca per nome..." value={searchPlayer} onChange={(e) => setSearchPlayer(e.target.value)} className="pl-9" />
                 </div>
                 <Select value={filterRole} onValueChange={setFilterRole}>
                   <SelectTrigger><SelectValue placeholder="Ruolo" /></SelectTrigger>
@@ -508,25 +483,14 @@ export default function GestioneAste() {
             <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-purple-500" /></div>
           ) : (
             <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-              <div className="p-3 border-b bg-slate-50 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <Checkbox
-                    checked={selectedPlayers.length === freeFilteredPlayers.length && freeFilteredPlayers.length > 0}
-                    onCheckedChange={toggleAll}
-                  />
-                  <span className="text-sm text-slate-600 font-medium">
-                    {loadingPlayers ? 'Caricamento...' : `${freeFilteredPlayers.length} su ${totalFreePlayers} svincolati`}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-sm text-slate-500">
-                  {totalPages > 1 && (
-                    <>
-                      <Button size="sm" variant="outline" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0 || loadingPlayers}>←</Button>
-                      <span>{page + 1} / {totalPages}</span>
-                      <Button size="sm" variant="outline" onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1 || loadingPlayers}>→</Button>
-                    </>
-                  )}
-                </div>
+              <div className="p-3 border-b bg-slate-50 flex items-center gap-3">
+                <Checkbox
+                  checked={selectedPlayers.length === freeFilteredPlayers.length && freeFilteredPlayers.length > 0}
+                  onCheckedChange={toggleAll}
+                />
+                <span className="text-sm text-slate-600 font-medium">
+                  {loadingPlayers ? 'Caricamento...' : `${freeFilteredPlayers.length} svincolati disponibili`}
+                </span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full">
