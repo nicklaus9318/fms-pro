@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { createPageUrl } from './utils';
+import { createPageUrl } from '@/utils';
 import { base44 } from '@/api/base44Client';
 import ConnectionStatus from '@/components/ui/connection-status';
 import { ErrorBoundary } from '@/components/ui/error-boundary';
@@ -229,8 +229,8 @@ export default function Layout({ children, currentPageName }) {
         <main className="p-4 lg:p-8">
           {children}
         </main>
-        </div>
-        </div>
-        </ErrorBoundary>
-        );
-        }
+      </div>
+    </div>
+    </ErrorBoundary>
+  );
+}

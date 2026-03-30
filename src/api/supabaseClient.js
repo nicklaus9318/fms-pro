@@ -4,7 +4,10 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  console.error('[supabaseClient] Mancano le variabili d\'ambiente VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY');
+  throw new Error(
+    '[supabaseClient] Mancano le variabili d\'ambiente VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY. ' +
+    'Crea un file .env con queste variabili prima di avviare l\'app.'
+  );
 }
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
