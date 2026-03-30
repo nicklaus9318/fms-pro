@@ -10,7 +10,7 @@ import { Trophy, Award, AlertCircle, Target, Medal } from 'lucide-react';
 export default function GlobalStats() {
   const { data: leagues = [] } = useQuery({
     queryKey: ['leagues'],
-    queryFn: async () => { const { data } = await supabase.from('leagues').select('*'); return data || []; }
+    queryFn: async () => { const { data } = await supabase.from('leagues').select('id,name,season,status'); return data || []; }
   });
 
   // Estrai tutte le stagioni uniche dalle leghe
@@ -28,18 +28,18 @@ export default function GlobalStats() {
 
   const { data: teams = [] } = useQuery({
     queryKey: ['teams'],
-    queryFn: async () => { const { data } = await supabase.from('teams').select('*'); return data || []; }
+    queryFn: async () => { const { data } = await supabase.from('teams').select('id,name,primary_color'); return data || []; }
   });
 
   const { data: players = [] } = useQuery({
     queryKey: ['players'],
-    queryFn: async () => { const { data } = await supabase.from('players').select('*'); return data || []; }
+    queryFn: async () => { const { data } = await supabase.from('players').select('id,first_name,last_name,role,team_id,overall_rating,goals,assists,yellow_cards_accumulated,id_sofifa'); return data || []; }
   });
 
   const { data: suspendedPlayers = [] } = useQuery({
     queryKey: ['suspendedPlayers'],
     queryFn: async () => {
-      const { data } = await supabase.from('player_statuses').select('*').eq('status_type', 'suspended');
+      const { data } = await supabase.from('player_statuses').select('id,player_id,player_name,team_id,status_type,matchdays_remaining,reason,reason_type,suspension_start_matchday').eq('status_type', 'suspended');
       return data || [];
     }
   });

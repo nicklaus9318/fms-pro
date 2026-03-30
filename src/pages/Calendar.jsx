@@ -164,12 +164,12 @@ export default function Calendar() {
   const isAdmin = user?.role === 'admin';
   const isController = user?.role === 'controller' || user?.role === 'controllore';
 
-  const { data: leagues = [] } = useQuery({ queryKey: ['leagues'], queryFn: async () => { const { data } = await supabase.from('leagues').select('*'); return data || []; } });
-  const { data: competitions = [] } = useQuery({ queryKey: ['competitions'], queryFn: async () => { const { data } = await supabase.from('competitions').select('*'); return data || []; } });
-  const { data: teams = [] } = useQuery({ queryKey: ['teams'], queryFn: async () => { const { data } = await supabase.from('teams').select('*'); return data || []; } });
-  const { data: matches = [] } = useQuery({ queryKey: ['matches'], queryFn: async () => { const { data } = await supabase.from('matches').select('*'); return data || []; } });
-  const { data: players = [] } = useQuery({ queryKey: ['players'], queryFn: async () => { const { data } = await supabase.from('players').select('*').eq('status', 'approved'); return data || []; } });
-  const { data: playerStatuses = [] } = useQuery({ queryKey: ['playerStatuses'], queryFn: async () => { const { data } = await supabase.from('player_statuses').select('*'); return data || []; } });
+  const { data: leagues = [] } = useQuery({ queryKey: ['leagues'], queryFn: async () => { const { data } = await supabase.from('leagues').select('id,name,season,status,participating_teams,current_matchday,prize_type,competition_format,default_budget,logo_url'); return data || []; } });
+  const { data: competitions = [] } = useQuery({ queryKey: ['competitions'], queryFn: async () => { const { data } = await supabase.from('competitions').select('id,name,league_id,season,format,participating_teams,status'); return data || []; } });
+  const { data: teams = [] } = useQuery({ queryKey: ['teams'], queryFn: async () => { const { data } = await supabase.from('teams').select('id,name,owner_email,primary_color,logo_url,budget,league_id,team_type'); return data || []; } });
+  const { data: matches = [] } = useQuery({ queryKey: ['matches'], queryFn: async () => { const { data } = await supabase.from('matches').select('id,league_id,competition_id,season,matchday,stage,status,home_team_id,home_team_name,away_team_id,away_team_name,home_score,away_score,scorers,assists,cards,injuries,photos,stream_link,notes,mvp_player_id,mvp_player_name,home_goalkeeper_id,home_goalkeeper_rating,away_goalkeeper_id,away_goalkeeper_rating'); return data || []; } });
+  const { data: players = [] } = useQuery({ queryKey: ['players'], queryFn: async () => { const { data } = await supabase.from('players').select('id,first_name,last_name,role,age,overall_rating,goals,assists,mvp_count,yellow_cards_accumulated,player_status,team_id,id_sofifa,photo_url,status').eq('status', 'approved'); return data || []; } });
+  const { data: playerStatuses = [] } = useQuery({ queryKey: ['playerStatuses'], queryFn: async () => { const { data } = await supabase.from('player_statuses').select('id,player_id,player_name,team_id,status_type,matchdays_remaining,reason,reason_type,matchday_of_card,suspension_start_matchday'); return data || []; } });
   const { data: rawStandings = [] } = useQuery({
     queryKey: ['standings', selectedLeague],
     queryFn: async () => { const { data } = await supabase.from('standings').select('*').eq('league_id', selectedLeague); return data || []; },

@@ -79,7 +79,7 @@ export default function GestioneAste() {
   const { data: freePlayers = [], isLoading: loadingPlayers } = useQuery({
     queryKey: ['freePlayersAuction'],
     queryFn: async () => {
-      const { data } = await supabase.from('players').select('*').eq('status', 'approved');
+      const { data } = await supabase.from('players').select('id,first_name,last_name,role,age,overall_rating,player_value,team_id,id_sofifa,photo_url,status,created_by').eq('status', 'approved');
       return data || [];
     }
   });
@@ -87,7 +87,7 @@ export default function GestioneAste() {
   const { data: auctions = [] } = useQuery({
     queryKey: ['auctionsAdmin'],
     queryFn: async () => {
-      const { data } = await supabase.from('auctions').select('*').order('created_at', { ascending: false });
+      const { data } = await supabase.from('auctions').select('id,player_id,player_name,auction_type,auction_session_name,status,starting_price,current_price,current_winner_team_id,current_winner_team_name,start_time,end_time,max_bids_per_team,league_id,seller_team_id,created_at').order('created_at', { ascending: false });
       return data || [];
     }
   });
@@ -95,7 +95,7 @@ export default function GestioneAste() {
   const { data: bids = [] } = useQuery({
     queryKey: ['allBids'],
     queryFn: async () => {
-      const { data } = await supabase.from('bids').select('*').order('created_at', { ascending: false });
+      const { data } = await supabase.from('bids').select('id,auction_id,team_id,team_name,amount,status,bid_time,created_at').order('created_at', { ascending: false });
       return data || [];
     }
   });
@@ -103,7 +103,7 @@ export default function GestioneAste() {
   const { data: teams = [] } = useQuery({
     queryKey: ['teams'],
     queryFn: async () => {
-      const { data } = await supabase.from('teams').select('*');
+      const { data } = await supabase.from('teams').select('id,name,owner_email,budget,logo_url,primary_color');
       return data || [];
     }
   });
@@ -111,7 +111,7 @@ export default function GestioneAste() {
   const { data: players = [] } = useQuery({
     queryKey: ['allPlayersAuction'],
     queryFn: async () => {
-      const { data } = await supabase.from('players').select('*').eq('status', 'approved');
+      const { data } = await supabase.from('players').select('id,first_name,last_name,role,age,overall_rating,player_value,team_id,id_sofifa,photo_url,status,created_by').eq('status', 'approved');
       return data || [];
     }
   });

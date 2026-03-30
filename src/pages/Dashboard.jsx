@@ -29,32 +29,32 @@ export default function Dashboard() {
 
   const { data: leagues = [] } = useQuery({
     queryKey: ['leagues'],
-    queryFn: async () => { const { data } = await supabase.from('leagues').select('*'); return data || []; }
+    queryFn: async () => { const { data } = await supabase.from('leagues').select('id,name,season,status,participating_teams,current_matchday'); return data || []; }
   });
 
   const { data: teams = [] } = useQuery({
     queryKey: ['teams'],
-    queryFn: async () => { const { data } = await supabase.from('teams').select('*'); return data || []; }
+    queryFn: async () => { const { data } = await supabase.from('teams').select('id,name,owner_email,primary_color,logo_url,budget,league_id,team_type'); return data || []; }
   });
 
   const { data: players = [] } = useQuery({
     queryKey: ['players'],
-    queryFn: async () => { const { data } = await supabase.from('players').select('*').eq('status', 'approved'); return data || []; }
+    queryFn: async () => { const { data } = await supabase.from('players').select('id,first_name,last_name,role,age,overall_rating,team_id,id_sofifa,photo_url,status').eq('status', 'approved'); return data || []; }
   });
 
   const { data: matches = [] } = useQuery({
     queryKey: ['matches'],
-    queryFn: async () => { const { data } = await supabase.from('matches').select('*'); return data || []; }
+    queryFn: async () => { const { data } = await supabase.from('matches').select('id,league_id,season,matchday,status,home_team_id,away_team_id,home_score,away_score'); return data || []; }
   });
 
   const { data: auctions = [] } = useQuery({
     queryKey: ['auctions'],
-    queryFn: async () => { const { data } = await supabase.from('auctions').select('*').eq('status', 'active'); return data || []; }
+    queryFn: async () => { const { data } = await supabase.from('auctions').select('id,player_id,player_name,status,auction_type,current_price,end_time').eq('status', 'active'); return data || []; }
   });
 
   const { data: playerStatuses = [] } = useQuery({
     queryKey: ['playerStatuses'],
-    queryFn: async () => { const { data } = await supabase.from('player_statuses').select('*'); return data || []; }
+    queryFn: async () => { const { data } = await supabase.from('player_statuses').select('id,player_id,player_name,team_id,status_type,matchdays_remaining'); return data || []; }
   });
 
   // Find user's team

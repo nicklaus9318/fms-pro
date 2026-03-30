@@ -298,12 +298,12 @@ function MercatoManager() {
 
   const { data: appSettings = [] } = useQuery({
     queryKey: ['appSettings'],
-    queryFn: async () => { const { data } = await supabase.from('app_settings').select('*'); return data || []; }
+    queryFn: async () => { const { data } = await supabase.from('app_settings').select('id,key,value'); return data || []; }
   });
 
   const { data: auctions = [] } = useQuery({
     queryKey: ['auctionsAdmin'],
-    queryFn: async () => { const { data } = await supabase.from('auctions').select('*').order('created_at', { ascending: false }); return data || []; }
+    queryFn: async () => { const { data } = await supabase.from('auctions').select('id,player_id,player_name,auction_type,auction_session_name,status,current_price,end_time,created_at').order('created_at', { ascending: false }); return data || []; }
   });
 
   // Sessioni di aste (raggruppate per auction_session_name)
@@ -646,7 +646,7 @@ function GettoniManager({ teams }) {
 
   const { data: appSettings = [], refetch } = useQuery({
     queryKey: ['appSettings'],
-    queryFn: async () => { const { data } = await supabase.from('app_settings').select('*'); return data || []; }
+    queryFn: async () => { const { data } = await supabase.from('app_settings').select('id,key,value'); return data || []; }
   });
 
   const getGettoni = (teamId) => {
@@ -801,12 +801,12 @@ export default function AdminPanel() {
 
   const isAdmin = user?.role === 'admin';
 
-  const { data: leagues = [] }        = useQuery({ queryKey:['leagues'],        queryFn: async () => { const { data } = await supabase.from('leagues').select('*'); return data || []; } });
-  const { data: pendingPlayers = [] } = useQuery({ queryKey:['pendingPlayers'], queryFn: async () => { const { data } = await supabase.from('players').select('*').eq('status','pending'); return data || []; } });
-  const { data: teams = [] }          = useQuery({ queryKey:['teams'],          queryFn: async () => { const { data } = await supabase.from('teams').select('*'); return data || []; } });
-  const { data: allPlayers = [] }     = useQuery({ queryKey:['allPlayers'],     queryFn: async () => { const { data } = await supabase.from('players').select('*'); return data || []; } });
-  const { data: competitions = [] }   = useQuery({ queryKey:['competitions'],   queryFn: async () => { const { data } = await supabase.from('competitions').select('*'); return data || []; } });
-  const { data: matches = [] }        = useQuery({ queryKey:['matches'],        queryFn: async () => { const { data } = await supabase.from('matches').select('*'); return data || []; } });
+  const { data: leagues = [] }        = useQuery({ queryKey:['leagues'],        queryFn: async () => { const { data } = await supabase.from('leagues').select('id,name,season,status,participating_teams,competition_format,prize_type,current_matchday,logo_url,default_budget'); return data || []; } });
+  const { data: pendingPlayers = [] } = useQuery({ queryKey:['pendingPlayers'], queryFn: async () => { const { data } = await supabase.from('players').select('id,first_name,last_name,role,age,overall_rating,id_sofifa,status,created_by,team_id').eq('status','pending'); return data || []; } });
+  const { data: teams = [] }          = useQuery({ queryKey:['teams'],          queryFn: async () => { const { data } = await supabase.from('teams').select('id,name,owner_email,budget,logo_url,primary_color,team_type,league_id,initial_budget'); return data || []; } });
+  const { data: allPlayers = [] }     = useQuery({ queryKey:['allPlayers'],     queryFn: async () => { const { data } = await supabase.from('players').select('id,first_name,last_name,role,age,overall_rating,salary,player_value,id_sofifa,team_id,status,yellow_cards_accumulated,goals,assists,mvp_count'); return data || []; } });
+  const { data: competitions = [] }   = useQuery({ queryKey:['competitions'],   queryFn: async () => { const { data } = await supabase.from('competitions').select('id,name,league_id,season,format,participating_teams,status'); return data || []; } });
+  const { data: matches = [] }        = useQuery({ queryKey:['matches'],        queryFn: async () => { const { data } = await supabase.from('matches').select('id,league_id,competition_id,season,matchday,status,home_team_id,away_team_id,home_score,away_score,stage,home_team_name,away_team_name'); return data || []; } });
 
   const createLeagueMutation = useMutation({
     mutationFn: async (data) => {
@@ -1015,7 +1015,7 @@ export default function AdminPanel() {
     setGeneratingKnockout(true);
     try {
       // Genera il prossimo turno knockout direttamente con Supabase
-      const { data: allCompMatches } = await supabase.from('matches').select('*').eq('competition_id', competitionId).eq('status', 'completed');
+      const { data: allCompMatches } = await supabase.from('matches').select('id,league_id,competition_id,season,matchday,status,home_team_id,away_team_id,home_score,away_score,stage,home_team_name,away_team_name').eq('competition_id', competitionId).eq('status', 'completed');
       if (!allCompMatches || allCompMatches.length === 0) throw new Error('Nessuna partita completata');
       const latestMatchday = Math.max(...allCompMatches.map(m => m.matchday));
       const latestRound = allCompMatches.filter(m => m.matchday === latestMatchday);
