@@ -38,6 +38,11 @@ export default function AsteBusteChiuse() {
   const [bidAmount, setBidAmount] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [showMyBids, setShowMyBids] = useState(false);
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 50;
+
+  // Reset pagina quando cambiano i filtri
+  useEffect(() => { setPage(0); }, [searchAuction, filterRole]);
 
   const queryClient = useQueryClient();
 
@@ -55,27 +60,38 @@ export default function AsteBusteChiuse() {
     loadUser();
   }, []);
 
-  // Aste attive con dati giocatore in join — nessun caricamento separato dei players
-  const { data: auctions = [], isLoading } = useQuery({
-    queryKey: ['sealedBidAuctions'],
+  // Aste attive con dati giocatore in join — ordinate per overall desc, 50 per pagina
+  const { data: auctionsData, isLoading } = useQuery({
+    queryKey: ['sealedBidAuctions', searchAuction, filterRole, page],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from('auctions')
         .select(`
           id, player_id, player_name, auction_type, auction_session_name,
           status, starting_price, current_price, end_time, max_bids_per_team,
           players!player_id (id, role, overall_rating, age, player_value, id_sofifa, photo_url)
-        `)
+        `, { count: 'exact' })
         .eq('status', 'active')
         .eq('auction_type', 'sealed_bid')
         .gt('end_time', new Date().toISOString())
-        .order('end_time', { ascending: true });
+        .order('overall_rating', { ascending: false, foreignTable: 'players' })
+        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+
+      if (searchAuction.trim()) q = q.ilike('player_name', `%${searchAuction.trim()}%`);
+      if (filterRole !== 'all') q = q.eq('players.role', filterRole);
+
+      const { data, count, error } = await q;
       if (error) throw error;
-      return data || [];
+      return { auctions: data || [], total: count || 0 };
     },
     refetchInterval: 30000,
     staleTime: 20 * 1000,
+    keepPreviousData: true,
   });
+
+  const auctions = auctionsData?.auctions || [];
+  const totalAuctions = auctionsData?.total || 0;
+  const totalPages = Math.ceil(totalAuctions / PAGE_SIZE);
 
   // Le mie offerte — solo quelle della mia squadra, non tutte
   const { data: myBids = [] } = useQuery({
@@ -92,12 +108,8 @@ export default function AsteBusteChiuse() {
     enabled: !!myTeam,
   });
 
-  // Filtra aste
-  const sealedAuctions = auctions.filter(a => {
-    const nameMatch = !searchAuction || a.player_name?.toLowerCase().includes(searchAuction.toLowerCase());
-    const roleMatch = filterRole === 'all' || a.players?.role === filterRole;
-    return nameMatch && roleMatch;
-  });
+  // Filtri già applicati server-side nella query
+  const sealedAuctions = auctions;
 
   const myBidForAuction = (auctionId) => myBids.find(b => b.auction_id === auctionId);
 
@@ -222,7 +234,22 @@ export default function AsteBusteChiuse() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <>
+          {/* Info totale + navigazione pagine */}
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-slate-500">
+              {totalAuctions} aste totali · pagina {page + 1} di {totalPages}
+            </p>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}>← Prec</Button>
+                <span className="text-sm text-slate-600 font-medium">{page + 1} / {totalPages}</span>
+                <Button size="sm" variant="outline" onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}>Succ →</Button>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {sealedAuctions.map(auction => {
             const player = auction.players; // dati dal join
             const photoUrl = getSofifaPhotoUrl(player?.id_sofifa);
@@ -290,6 +317,16 @@ export default function AsteBusteChiuse() {
             );
           })}
         </div>
+
+          {/* Paginazione in fondo */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <Button size="sm" variant="outline" onClick={() => { setPage(p => Math.max(0, p - 1)); window.scrollTo(0,0); }} disabled={page === 0}>← Precedente</Button>
+              <span className="text-sm text-slate-600">{page + 1} / {totalPages}</span>
+              <Button size="sm" variant="outline" onClick={() => { setPage(p => Math.min(totalPages - 1, p + 1)); window.scrollTo(0,0); }} disabled={page >= totalPages - 1}>Successiva →</Button>
+            </div>
+          )}
+        </>
       )}
 
       {/* Dialog Mie Offerte */}
