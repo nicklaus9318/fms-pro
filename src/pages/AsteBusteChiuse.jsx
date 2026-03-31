@@ -40,9 +40,13 @@ export default function AsteBusteChiuse() {
   const [showMyBids, setShowMyBids] = useState(false);
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 50;
+  const [filterOverallMin, setFilterOverallMin] = useState('');
+  const [filterOverallMax, setFilterOverallMax] = useState('');
+  const [filterAgeMin, setFilterAgeMin] = useState('');
+  const [filterAgeMax, setFilterAgeMax] = useState('');
 
   // Reset pagina quando cambiano i filtri
-  useEffect(() => { setPage(0); }, [searchAuction, filterRole]);
+  useEffect(() => { setPage(0); }, [searchAuction, filterRole, filterOverallMin, filterOverallMax, filterAgeMin, filterAgeMax]);
 
   const queryClient = useQueryClient();
 
@@ -62,7 +66,7 @@ export default function AsteBusteChiuse() {
 
   // Aste attive con dati giocatore in join — ordinate per overall desc, 50 per pagina
   const { data: auctionsData, isLoading } = useQuery({
-    queryKey: ['sealedBidAuctions', searchAuction, filterRole, page],
+    queryKey: ['sealedBidAuctions', searchAuction, filterRole, filterOverallMin, filterOverallMax, filterAgeMin, filterAgeMax, page],
     queryFn: async () => {
       let q = supabase
         .from('auctions')
@@ -79,6 +83,10 @@ export default function AsteBusteChiuse() {
 
       if (searchAuction.trim()) q = q.ilike('player_name', `%${searchAuction.trim()}%`);
       if (filterRole !== 'all') q = q.eq('players.role', filterRole);
+      if (filterOverallMin) q = q.gte('players.overall_rating', parseInt(filterOverallMin));
+      if (filterOverallMax) q = q.lte('players.overall_rating', parseInt(filterOverallMax));
+      if (filterAgeMin) q = q.gte('players.age', parseInt(filterAgeMin));
+      if (filterAgeMax) q = q.lte('players.age', parseInt(filterAgeMax));
 
       const { data, count, error } = await q;
       if (error) throw error;
@@ -205,19 +213,38 @@ export default function AsteBusteChiuse() {
         </div>
       )}
 
-      <div className="flex gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[200px]">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="relative col-span-2 sm:col-span-1 lg:col-span-2">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <Input placeholder="Cerca giocatore..." value={searchAuction} onChange={(e) => setSearchAuction(e.target.value)} className="pl-9" />
         </div>
         <Select value={filterRole} onValueChange={setFilterRole}>
-          <SelectTrigger className="w-[160px]"><SelectValue placeholder="Ruolo" /></SelectTrigger>
+          <SelectTrigger><SelectValue placeholder="Ruolo" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Tutti i ruoli</SelectItem>
             {ROLES.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
           </SelectContent>
         </Select>
+        <Input type="number" placeholder="OVR min" min="1" max="99"
+          value={filterOverallMin} onChange={(e) => setFilterOverallMin(e.target.value)} />
+        <Input type="number" placeholder="OVR max" min="1" max="99"
+          value={filterOverallMax} onChange={(e) => setFilterOverallMax(e.target.value)} />
+        <Input type="number" placeholder="Età min" min="15" max="50"
+          value={filterAgeMin} onChange={(e) => setFilterAgeMin(e.target.value)} />
+        <Input type="number" placeholder="Età max" min="15" max="50"
+          value={filterAgeMax} onChange={(e) => setFilterAgeMax(e.target.value)} />
       </div>
+      {(filterRole !== 'all' || filterOverallMin || filterOverallMax || filterAgeMin || filterAgeMax || searchAuction) && (
+        <div className="flex justify-end">
+          <Button size="sm" variant="outline" onClick={() => {
+            setSearchAuction(''); setFilterRole('all');
+            setFilterOverallMin(''); setFilterOverallMax('');
+            setFilterAgeMin(''); setFilterAgeMax('');
+          }}>
+            ✕ Rimuovi filtri
+          </Button>
+        </div>
+      )}
 
       <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
         🔒 <strong>Buste Chiuse:</strong> Le tue offerte sono segrete. Alla chiusura dell'asta, vince chi ha offerto di più. Puoi modificare la tua offerta finché l'asta è aperta.
