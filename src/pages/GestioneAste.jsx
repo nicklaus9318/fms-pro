@@ -161,18 +161,25 @@ export default function GestioneAste() {
     }
   };
 
-  // Chiude tutte le aste di una sessione in bulk
+  // Chiude tutte le aste di una sessione con una singola chiamata SQL server-side
   const closeSession = async (sessionName) => {
     if (!window.confirm(`Chiudere tutte le aste della sessione "${sessionName}"?`)) return;
     setClosingSession(sessionName);
-    const sessionAuctions = auctions.filter(a => a.auction_session_name === sessionName && a.status === 'active');
-    let success = 0, errors = 0;
-    for (const auction of sessionAuctions) {
-      try { await closeAuctionMutation.mutateAsync(auction.id); success++; }
-      catch (e) { errors++; }
+    try {
+      const { data, error } = await supabase.rpc('close_auction_session', {
+        p_session_name: sessionName
+      });
+      if (error) throw error;
+      queryClient.invalidateQueries({ queryKey: ['auctionsAdmin'] });
+      queryClient.invalidateQueries({ queryKey: ['allBids'] });
+      queryClient.invalidateQueries({ queryKey: ['teams'] });
+      queryClient.invalidateQueries({ queryKey: ['players'] });
+      const msg = `Sessione "${sessionName}" chiusa: ${data.closed} assegnate, ${data.no_bids} senza offerte${data.errors > 0 ? `, ${data.errors} errori` : ''}`;
+      toast.success(msg);
+    } catch (e) {
+      toast.error('Errore chiusura sessione: ' + e.message);
     }
     setClosingSession(null);
-    toast.success(`Sessione "${sessionName}": chiuse ${success} aste${errors > 0 ? `, ${errors} errori` : ''}`);
   };
 
   const createAuctionsMutation = useMutation({
