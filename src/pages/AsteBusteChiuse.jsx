@@ -43,6 +43,8 @@ export default function AsteBusteChiuse() {
   const [myTeam, setMyTeam] = useState(null);
   const [searchAuction, setSearchAuction] = useState('');
   const [filterRole, setFilterRole] = useState('all');
+  const [filterMinOverall, setFilterMinOverall] = useState('all');
+  const [filterMaxAge, setFilterMaxAge] = useState('all');
   const [showBidModal, setShowBidModal] = useState(false);
   const [selectedAuction, setSelectedAuction] = useState(null);
   const [bidAmount, setBidAmount] = useState('');
@@ -94,7 +96,9 @@ export default function AsteBusteChiuse() {
       const player = players.find(p => p.id === a.player_id);
       const nameMatch = !searchAuction || a.player_name?.toLowerCase().includes(searchAuction.toLowerCase());
       const roleMatch = filterRole === 'all' || player?.role === filterRole;
-      return nameMatch && roleMatch;
+      const overallMatch = filterMinOverall === 'all' || (player?.overall_rating >= parseInt(filterMinOverall));
+      const ageMatch = filterMaxAge === 'all' || (player?.age <= parseInt(filterMaxAge));
+      return nameMatch && roleMatch && overallMatch && ageMatch;
     })
     .sort((a, b) => new Date(a.end_time) - new Date(b.end_time));
 
@@ -202,10 +206,35 @@ export default function AsteBusteChiuse() {
           <Input placeholder="Cerca giocatore..." value={searchAuction} onChange={(e) => setSearchAuction(e.target.value)} className="pl-9" />
         </div>
         <Select value={filterRole} onValueChange={setFilterRole}>
-          <SelectTrigger className="w-[160px]"><SelectValue placeholder="Ruolo" /></SelectTrigger>
+          <SelectTrigger className="w-[140px]"><SelectValue placeholder="Ruolo" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Tutti i ruoli</SelectItem>
             {ROLES.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={filterMinOverall} onValueChange={setFilterMinOverall}>
+          <SelectTrigger className="w-[140px]"><SelectValue placeholder="Overall min" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Tutti OVR</SelectItem>
+            <SelectItem value="60">OVR 60+</SelectItem>
+            <SelectItem value="65">OVR 65+</SelectItem>
+            <SelectItem value="70">OVR 70+</SelectItem>
+            <SelectItem value="75">OVR 75+</SelectItem>
+            <SelectItem value="80">OVR 80+</SelectItem>
+            <SelectItem value="85">OVR 85+</SelectItem>
+            <SelectItem value="90">OVR 90+</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={filterMaxAge} onValueChange={setFilterMaxAge}>
+          <SelectTrigger className="w-[140px]"><SelectValue placeholder="Età max" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Tutte le età</SelectItem>
+            <SelectItem value="21">≤ 21 anni</SelectItem>
+            <SelectItem value="23">≤ 23 anni</SelectItem>
+            <SelectItem value="25">≤ 25 anni</SelectItem>
+            <SelectItem value="28">≤ 28 anni</SelectItem>
+            <SelectItem value="30">≤ 30 anni</SelectItem>
+            <SelectItem value="33">≤ 33 anni</SelectItem>
           </SelectContent>
         </Select>
       </div>
