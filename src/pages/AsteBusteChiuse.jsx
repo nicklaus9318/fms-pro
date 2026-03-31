@@ -84,7 +84,7 @@ export default function AsteBusteChiuse() {
       if (!myTeam?.id) return [];
       const { data } = await supabase
         .from('bids')
-        .select('id,auction_id,team_id,amount,status,bid_time')
+        .select('id,auction_id,team_id,team_name,amount,status,bid_time')
         .eq('team_id', myTeam.id)
         .eq('status', 'active');
       return data || [];

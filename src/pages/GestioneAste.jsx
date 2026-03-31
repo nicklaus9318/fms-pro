@@ -95,7 +95,7 @@ export default function GestioneAste() {
   const { data: auctions = [] } = useQuery({
     queryKey: ['auctionsAdmin'],
     queryFn: async () => {
-      const { data } = await supabase.from('auctions').select('id,player_id,player_name,auction_type,auction_session_name,status,starting_price,current_price,current_winner_team_id,current_winner_team_name,start_time,end_time,max_bids_per_team,league_id,seller_team_id,created_at').order('created_at', { ascending: false });
+      const { data } = await supabase.from('auctions').select('id,player_id,player_name,auction_type,auction_session_name,status,starting_price,current_price,current_winner_team_id,current_winner_team_name,start_time,end_time,max_bids_per_team,league_id,seller_team_id,created_date').order('created_date', { ascending: false });
       return data || [];
     }
   });
@@ -103,7 +103,7 @@ export default function GestioneAste() {
   const { data: bids = [] } = useQuery({
     queryKey: ['allBids'],
     queryFn: async () => {
-      const { data } = await supabase.from('bids').select('id,auction_id,team_id,team_name,amount,status,bid_time,created_at').order('created_at', { ascending: false });
+      const { data } = await supabase.from('bids').select('id,auction_id,team_id,team_name,amount,status,bid_time,created_date').order('created_date', { ascending: false });
       return data || [];
     }
   });

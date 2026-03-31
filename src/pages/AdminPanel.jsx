@@ -303,7 +303,7 @@ function MercatoManager() {
 
   const { data: auctions = [] } = useQuery({
     queryKey: ['auctionsAdmin'],
-    queryFn: async () => { const { data } = await supabase.from('auctions').select('id,player_id,player_name,auction_type,auction_session_name,status,current_price,end_time,created_at').order('created_at', { ascending: false }); return data || []; }
+    queryFn: async () => { const { data } = await supabase.from('auctions').select('id,player_id,player_name,auction_type,auction_session_name,status,current_price,end_time,created_date').order('created_date', { ascending: false }); return data || []; }
   });
 
   // Sessioni di aste (raggruppate per auction_session_name)
