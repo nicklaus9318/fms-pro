@@ -66,7 +66,7 @@ export default function Players() {
   const [maxAge, setMaxAge] = useState('');
   const [availabilityFilter, setAvailabilityFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(0);
-  const playersPerPage = 150;
+  const playersPerPage = 100;
 
   useEffect(() => { setCurrentPage(0); }, [search, roleFilter, statusFilter, minOverall, maxOverall, minAge, maxAge, availabilityFilter]);
 
