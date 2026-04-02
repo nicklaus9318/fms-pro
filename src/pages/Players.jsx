@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/api/supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -75,8 +75,10 @@ export default function Players() {
   useEffect(() => {
     const loadUser = async () => {
       try {
-        const userData = await base44.auth.me();
-        setUser(userData);
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (!authUser) return;
+        const { data } = await supabase.from('user_roles').select('*').eq('email', authUser.email).single();
+        if (data) setUser(data);
       } catch (e) {}
     };
     loadUser();
@@ -86,21 +88,74 @@ export default function Players() {
 
   const { data: allPlayers = [], isLoading } = useQuery({
     queryKey: ['allPlayers'],
-    queryFn: () => base44.entities.Player.list()
+    queryFn: async () => {
+      // Carica tutti i giocatori in batch da 1000 (limite PostgREST)
+      let all = [];
+      let from = 0;
+      const batchSize = 1000;
+      while (true) {
+        const { data, error } = await supabase
+          .from('players')
+          .select('id,first_name,last_name,role,age,overall_rating,player_value,salary,team_id,status,id_sofifa,sofifa_link,photo_url,goals,assists,mvp_count,player_status,yellow_cards_accumulated,nationality,created_by')
+          .order('overall_rating', { ascending: false })
+          .range(from, from + batchSize - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        all = [...all, ...data];
+        if (data.length < batchSize) break;
+        from += batchSize;
+      }
+      return all;
+    },
+    staleTime: 5 * 60 * 1000,
   });
 
   const { data: teams = [] } = useQuery({
     queryKey: ['teams'],
-    queryFn: () => base44.entities.Team.list()
+    queryFn: async () => {
+      const { data } = await supabase.from('teams').select('id,name,owner_email,primary_color,logo_url');
+      return data || [];
+    }
   });
 
+  const sanitizePlayerData = (data) => {
+    const allowed = [
+      'first_name','last_name','role','age','overall_rating','player_value',
+      'salary','team_id','status','id_sofifa','photo_url','nationality',
+      'player_status','goals','assists','mvp_count','yellow_cards_accumulated',
+      'notes','real_team','jersey_number','lotto_number'
+    ];
+    const out = {};
+    for (const key of allowed) {
+      if (data[key] !== undefined) out[key] = data[key];
+    }
+    if (out.id_sofifa) {
+      const id = String(out.id_sofifa).replace(/\D/g, '');
+      out.sofifa_link = `https://sofifa.com/player/${id}`;
+      out.photo_url = `https://cdn.sofifa.net/players/${id}/26/60.png`;
+    }
+    if (out.age) out.age = parseInt(out.age) || null;
+    if (out.overall_rating) out.overall_rating = parseInt(out.overall_rating) || null;
+    if (out.jersey_number) out.jersey_number = parseInt(out.jersey_number) || null;
+    if (out.lotto_number) out.lotto_number = parseInt(out.lotto_number) || null;
+    return out;
+  };
+
   const createMutation = useMutation({
-    mutationFn: (data) => base44.entities.Player.create(data),
+    mutationFn: async (data) => {
+      const fields = sanitizePlayerData(data);
+      const { error } = await supabase.from('players').insert({ ...fields, status: 'approved' });
+      if (error) throw error;
+    },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['allPlayers'] }); toast.success('Giocatore creato'); setShowForm(false); setSelectedPlayer(null); }
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }) => base44.entities.Player.update(id, data),
+    mutationFn: async ({ id, data }) => {
+      const fields = sanitizePlayerData(data);
+      const { error } = await supabase.from('players').update(fields).eq('id', id);
+      if (error) throw error;
+    },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['allPlayers'] }); toast.success('Giocatore aggiornato'); setShowForm(false); setSelectedPlayer(null); }
   });
 
