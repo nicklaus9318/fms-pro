@@ -65,29 +65,22 @@ function mapRow(raw) {
 }
 
 function calcSalary(ovr) {
-  if (!ovr) return 500000;
+  if (!ovr) return 100000;
   const r = parseInt(ovr);
-  if (r >= 90) return 8000000;
-  if (r >= 88) return 6000000;
-  if (r >= 85) return 4000000;
-  if (r >= 82) return 3000000;
-  if (r >= 75) return 2000000;
-  if (r >= 65) return 1000000;
-  return 500000;
+  if (r >= 88) return 1000000;
+  if (r >= 85) return 700000;
+  if (r >= 82) return 500000;
+  if (r >= 75) return 250000;
+  return 100000;
 }
 
 function calcValue(ovr, age) {
   if (!ovr || parseInt(ovr) < 40) return 500000;
   const o = parseInt(ovr), a = parseInt(age) || 25;
-  const ageFactor = Math.max(1.0, Math.min(1.5, 1.0 + (28 - Math.min(a, 28)) * 0.1));
-  if (o >= 90) return Math.min(150000000, (120000000 + (o - 90) * 10000000) * ageFactor);
-  if (o >= 85 && a < 25) {
-    const yf = Math.max(1.0, Math.min(1.4, 1.0 + (25 - a) * 0.1));
-    return Math.min(100000000, (60000000 + (o - 85) * 8000000) * yf);
-  }
-  if (o >= 85) return Math.min(80000000, 50000000 + (o - 85) * 6000000);
-  if (o >= 80) return Math.min(60000000, (40000000 + (o - 80) * 4000000) * ageFactor);
-  return Math.min(Math.max(1000000 + (o - 60) * 1500000 + Math.max(0, 30 - a) * 300000, 500000), 40000000);
+  if (o > 85 && a < 25) return 30000000 + (o - 85) * 4000000;
+  if (o >= 80 && o <= 85 && a < 25) return 25000000 - (85 - o) * 1000000;
+  if (o < 80) return Math.max(0, Math.min(15000000, 1000000 + (o - 60) * 400000 + (30 - a) * 200000));
+  return Math.max(5000000, Math.min(25000000, 15000000 + (o - 80) * 500000 + (30 - a) * 300000));
 }
 
 // ─── Componente importatore ───────────────────────────────────────────────────
@@ -1548,20 +1541,20 @@ export default function AdminPanel() {
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
                 <p className="font-semibold mb-2">Come funziona il calcolo:</p>
                 <ul className="space-y-1 list-disc ml-4">
-                  <li>Overall 90+ età 23-28 → fino a <strong>150M€</strong></li>
-                  <li>Overall 85-89 età &lt;25 → fino a <strong>50M€</strong></li>
-                  <li>Overall 85+ senior → fino a <strong>80M€</strong></li>
-                  <li>Overall 80-85 → fino a <strong>50M€</strong></li>
-                  <li>Overall &lt;80 → fino a <strong>30M€</strong></li>
+                  <li>Overall 90+ età 21-28 → da <strong>120M€</strong> fino a <strong>150M€</strong></li>
+                  <li>Overall 85-89 età &lt;25 → da <strong>60M€</strong> fino a <strong>100M€</strong></li>
+                  <li>Overall 85+ senior → da <strong>50M€</strong> fino a <strong>80M€</strong></li>
+                  <li>Overall 80-84 → da <strong>40M€</strong> fino a <strong>60M€</strong></li>
+                  <li>Overall &lt;80 → fino a <strong>40M€</strong></li>
                 </ul>
                 <p className="font-semibold mt-3 mb-2">Stipendi:</p>
                 <ul className="space-y-1 list-disc ml-4">
-                  <li>Overall 90+ → <strong>10M€/anno</strong></li>
-                  <li>Overall 88-89 → <strong>7M€/anno</strong></li>
-                  <li>Overall 85-87 → <strong>5M€/anno</strong></li>
+                  <li>Overall 90+ → <strong>8M€/anno</strong></li>
+                  <li>Overall 88-89 → <strong>6M€/anno</strong></li>
+                  <li>Overall 85-87 → <strong>4M€/anno</strong></li>
                   <li>Overall 82-84 → <strong>3M€/anno</strong></li>
-                  <li>Overall 75-81 → <strong>1.5M€/anno</strong></li>
-                  <li>Overall 65-74 → <strong>500K€/anno</strong></li>
+                  <li>Overall 75-81 → <strong>2M€/anno</strong></li>
+                  <li>Overall 65-74 → <strong>1M€/anno</strong></li>
                 </ul>
               </div>
               <Button
@@ -1571,19 +1564,18 @@ export default function AdminPanel() {
                   try {
                     const calculateValue = (ovr, age) => {
                       if (!ovr || ovr < 40) return 500000;
-                      const ageFactor = Math.max(1.0, Math.min(1.5, 1.0 + (28 - Math.min(age, 28)) * 0.1));
-                      if (ovr >= 90) return Math.min(150000000, (120000000 + (ovr-90)*10000000) * ageFactor);
-                      if (ovr >= 85 && age < 25) { const yf = Math.max(1.0, Math.min(1.4, 1.0+(25-age)*0.1)); return Math.min(100000000, (60000000+(ovr-85)*8000000)*yf); }
-                      if (ovr >= 85) return Math.min(80000000, 50000000+(ovr-85)*6000000);
-                      if (ovr >= 80) return Math.min(60000000, (40000000+(ovr-80)*4000000)*ageFactor);
-                      return Math.min(Math.max(1000000+(ovr-60)*1500000+Math.max(0,30-age)*300000, 500000), 40000000);
+                      if (ovr >= 90 && age >= 23 && age <= 28) return Math.min(150000000, 80000000 + (ovr-90)*14000000 + (28-Math.abs(age-25))*1000000);
+                      if (ovr >= 85 && ovr < 90 && age < 25) return Math.min(50000000, 20000000 + (ovr-85)*6000000 + (25-age)*1000000);
+                      if (ovr >= 85) return Math.min(80000000, 30000000 + (ovr-85)*7000000);
+                      if (ovr >= 80) return Math.min(50000000, 10000000 + (ovr-80)*8000000);
+                      return Math.max(0, Math.min(30000000, 1000000 + (ovr-60)*400000 + Math.max(0,30-age)*200000));
                     };
                     const calculateSalary = (ovr) => {
-                      if (!ovr || ovr < 40) return 500000;
-                      if (ovr >= 90) return 8000000; if (ovr >= 88) return 6000000;
-                      if (ovr >= 85) return 4000000; if (ovr >= 82) return 3000000;
-                      if (ovr >= 75) return 2000000; if (ovr >= 65) return 1000000;
-                      return 500000;
+                      if (!ovr || ovr < 40) return 100000;
+                      if (ovr >= 90) return 10000000; if (ovr >= 88) return 7000000;
+                      if (ovr >= 85) return 5000000; if (ovr >= 82) return 3000000;
+                      if (ovr >= 75) return 1500000; if (ovr >= 65) return 500000;
+                      return 100000;
                     };
                     let updatedCount = 0;
                     for (const p of allPlayers) {
