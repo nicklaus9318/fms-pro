@@ -58,42 +58,35 @@ export default function Censimento() {
   const queryClient = useQueryClient();
 
   const calculateSalary = (overallRating) => {
-    if (!overallRating) return 0;
-    if (overallRating >= 90) return 10000000;
-    if (overallRating >= 88) return 7000000;
-    if (overallRating >= 85) return 5000000;
-    if (overallRating >= 82) return 3000000;
-    if (overallRating >= 75) return 1500000;
-    if (overallRating >= 65) return 500000;
-    return 100000;
+    if (!overallRating) return 500000;
+    const ovr = parseInt(overallRating);
+    if (ovr >= 90) return 8000000;
+    if (ovr >= 88) return 6000000;
+    if (ovr >= 85) return 4000000;
+    if (ovr >= 82) return 3000000;
+    if (ovr >= 75) return 2000000;
+    if (ovr >= 65) return 1000000;
+    return 500000;
   };
 
   const calculatePlayerValue = (overall, age) => {
     if (!overall || overall < 40) return 500000;
-    const ageNum = age || 25;
-    // Overall 90+ età 23-28 → fino a 150M
-    if (overall >= 90 && ageNum >= 23 && ageNum <= 28) {
-      const v = 80000000 + (overall - 90) * 14000000 + (28 - Math.abs(ageNum - 25)) * 1000000;
-      return Math.min(150000000, v);
+    const ovr = parseInt(overall);
+    const a = parseInt(age) || 25;
+    const ageFactor = Math.max(1.0, Math.min(1.5, 1.0 + (28 - Math.min(a, 28)) * 0.1));
+    // Overall 90+: 120M-150M
+    if (ovr >= 90) return Math.min(150000000, (120000000 + (ovr - 90) * 10000000) * ageFactor);
+    // Overall 85-89 giovani <25: 60M-100M
+    if (ovr >= 85 && a < 25) {
+      const yf = Math.max(1.0, Math.min(1.4, 1.0 + (25 - a) * 0.1));
+      return Math.min(100000000, (60000000 + (ovr - 85) * 8000000) * yf);
     }
-    // Overall 85-89 età <25 → fino a 50M
-    if (overall >= 85 && overall < 90 && ageNum < 25) {
-      const v = 20000000 + (overall - 85) * 6000000 + (25 - ageNum) * 1000000;
-      return Math.min(50000000, v);
-    }
-    // Overall 85+ senior → fino a 80M
-    if (overall >= 85) {
-      const v = 30000000 + (overall - 85) * 7000000;
-      return Math.min(80000000, v);
-    }
-    // Overall 80-85 → fino a 50M
-    if (overall >= 80) {
-      const v = 10000000 + (overall - 80) * 8000000;
-      return Math.min(50000000, v);
-    }
-    // Overall <80 → fino a 30M
-    const v = 1000000 + (overall - 60) * 400000 + Math.max(0, 30 - ageNum) * 200000;
-    return Math.max(0, Math.min(30000000, v));
+    // Overall 85+ senior: 50M-80M
+    if (ovr >= 85) return Math.min(80000000, 50000000 + (ovr - 85) * 6000000);
+    // Overall 80-84: 40M-60M
+    if (ovr >= 80) return Math.min(60000000, (40000000 + (ovr - 80) * 4000000) * ageFactor);
+    // Overall <80: fino a 40M
+    return Math.min(Math.max(1000000 + (ovr - 60) * 1500000 + Math.max(0, 30 - a) * 300000, 500000), 40000000);
   };
 
   useEffect(() => {

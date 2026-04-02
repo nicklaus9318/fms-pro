@@ -118,6 +118,29 @@ export default function Players() {
     }
   });
 
+  const calcSalary = (ovr) => {
+    if (!ovr) return 500000;
+    const r = parseInt(ovr);
+    if (r >= 90) return 8000000;
+    if (r >= 88) return 6000000;
+    if (r >= 85) return 4000000;
+    if (r >= 82) return 3000000;
+    if (r >= 75) return 2000000;
+    if (r >= 65) return 1000000;
+    return 500000;
+  };
+
+  const calcValue = (ovr, age) => {
+    if (!ovr || parseInt(ovr) < 40) return 500000;
+    const o = parseInt(ovr), a = parseInt(age) || 25;
+    const ageFactor = Math.max(1.0, Math.min(1.5, 1.0 + (28 - Math.min(a, 28)) * 0.1));
+    if (o >= 90) return Math.min(150000000, (120000000 + (o - 90) * 10000000) * ageFactor);
+    if (o >= 85 && a < 25) { const yf = Math.max(1.0, Math.min(1.4, 1.0 + (25 - a) * 0.1)); return Math.min(100000000, (60000000 + (o - 85) * 8000000) * yf); }
+    if (o >= 85) return Math.min(80000000, 50000000 + (o - 85) * 6000000);
+    if (o >= 80) return Math.min(60000000, (40000000 + (o - 80) * 4000000) * ageFactor);
+    return Math.min(Math.max(1000000 + (o - 60) * 1500000 + Math.max(0, 30 - a) * 300000, 500000), 40000000);
+  };
+
   const sanitizePlayerData = (data) => {
     const allowed = [
       'first_name','last_name','role','age','overall_rating','player_value',
@@ -138,6 +161,11 @@ export default function Players() {
     if (out.overall_rating) out.overall_rating = parseInt(out.overall_rating) || null;
     if (out.jersey_number) out.jersey_number = parseInt(out.jersey_number) || null;
     if (out.lotto_number) out.lotto_number = parseInt(out.lotto_number) || null;
+    // Ricalcola sempre valore e stipendio se c'è l'overall
+    if (out.overall_rating) {
+      out.salary = calcSalary(out.overall_rating);
+      out.player_value = calcValue(out.overall_rating, out.age);
+    }
     return out;
   };
 

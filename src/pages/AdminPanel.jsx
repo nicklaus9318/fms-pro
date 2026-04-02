@@ -34,10 +34,11 @@ function parseCSV(text) {
 const COL_MAP = {
   first_name:     ['first_name','nome','firstname','name','first name'],
   last_name:      ['last_name','cognome','lastname','surname','last name'],
+  full_name:      ['nome cognome','full_name','fullname','nome_cognome','player','giocatore'],
   role:           ['role','ruolo','position','pos'],
   age:            ['age','eta','età','years'],
   overall_rating: ['overall_rating','overall','ovr','rating','voto'],
-  id_sofifa:      ['id_sofifa','sofifa_id','sofifa','id'],
+  id_sofifa:      ['id_sofifa','sofifa_id','sofifa','id','sofifa id','id sofifa'],
   nationality:    ['nationality','nazionalita','nation','country'],
 };
 
@@ -48,26 +49,45 @@ function mapRow(raw) {
       if (raw[alias] !== undefined && raw[alias] !== '') { out[canon] = raw[alias]; break; }
     }
   }
+  // Se il CSV ha "nome cognome" in un'unica colonna, splitta in first_name + last_name
+  if (out.full_name && (!out.first_name || !out.last_name)) {
+    const parts = out.full_name.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      out.first_name = parts[0];
+      out.last_name  = parts.slice(1).join(' ');
+    } else if (parts.length === 1) {
+      out.first_name = '';
+      out.last_name  = parts[0];
+    }
+  }
+  delete out.full_name;
   return out;
 }
 
 function calcSalary(ovr) {
-  if (!ovr) return 100000;
+  if (!ovr) return 500000;
   const r = parseInt(ovr);
-  if (r >= 88) return 1000000;
-  if (r >= 85) return 700000;
-  if (r >= 82) return 500000;
-  if (r >= 75) return 250000;
-  return 100000;
+  if (r >= 90) return 8000000;
+  if (r >= 88) return 6000000;
+  if (r >= 85) return 4000000;
+  if (r >= 82) return 3000000;
+  if (r >= 75) return 2000000;
+  if (r >= 65) return 1000000;
+  return 500000;
 }
 
 function calcValue(ovr, age) {
   if (!ovr || parseInt(ovr) < 40) return 500000;
   const o = parseInt(ovr), a = parseInt(age) || 25;
-  if (o > 85 && a < 25) return 30000000 + (o - 85) * 4000000;
-  if (o >= 80 && o <= 85 && a < 25) return 25000000 - (85 - o) * 1000000;
-  if (o < 80) return Math.max(0, Math.min(15000000, 1000000 + (o - 60) * 400000 + (30 - a) * 200000));
-  return Math.max(5000000, Math.min(25000000, 15000000 + (o - 80) * 500000 + (30 - a) * 300000));
+  const ageFactor = Math.max(1.0, Math.min(1.5, 1.0 + (28 - Math.min(a, 28)) * 0.1));
+  if (o >= 90) return Math.min(150000000, (120000000 + (o - 90) * 10000000) * ageFactor);
+  if (o >= 85 && a < 25) {
+    const yf = Math.max(1.0, Math.min(1.4, 1.0 + (25 - a) * 0.1));
+    return Math.min(100000000, (60000000 + (o - 85) * 8000000) * yf);
+  }
+  if (o >= 85) return Math.min(80000000, 50000000 + (o - 85) * 6000000);
+  if (o >= 80) return Math.min(60000000, (40000000 + (o - 80) * 4000000) * ageFactor);
+  return Math.min(Math.max(1000000 + (o - 60) * 1500000 + Math.max(0, 30 - a) * 300000, 500000), 40000000);
 }
 
 // ─── Componente importatore ───────────────────────────────────────────────────
@@ -176,9 +196,9 @@ function PlayerImporter({ allPlayers, queryClient }) {
           <p>Intestazioni riconosciute (separatore virgola, punto e virgola o tab):</p>
           <div className="grid grid-cols-2 gap-x-8 font-mono text-xs bg-white rounded p-2 border border-blue-200">
             <span>first_name / nome</span><span>last_name / cognome</span>
-            <span>role / ruolo</span><span>age / eta</span>
-            <span>overall_rating / ovr</span><span>id_sofifa / sofifa_id</span>
-            <span>nationality</span><span>(team_name ignorato)</span>
+            <span>nome cognome (colonna unica)</span><span>role / ruolo</span>
+            <span>age / eta</span><span>overall_rating / ovr / overall</span>
+            <span>id_sofifa / sofifa id</span><span>nationality</span>
           </div>
           <p className="text-blue-600 text-xs">ℹ️ I giocatori trovati vengono <strong>aggiornati</strong> (solo campi del CSV). Team, gol e statistiche restano intatti. I nuovi vengono creati con status "approved".</p>
         </CardContent>
@@ -1551,18 +1571,19 @@ export default function AdminPanel() {
                   try {
                     const calculateValue = (ovr, age) => {
                       if (!ovr || ovr < 40) return 500000;
-                      if (ovr >= 90 && age >= 23 && age <= 28) return Math.min(150000000, 80000000 + (ovr-90)*14000000 + (28-Math.abs(age-25))*1000000);
-                      if (ovr >= 85 && ovr < 90 && age < 25) return Math.min(50000000, 20000000 + (ovr-85)*6000000 + (25-age)*1000000);
-                      if (ovr >= 85) return Math.min(80000000, 30000000 + (ovr-85)*7000000);
-                      if (ovr >= 80) return Math.min(50000000, 10000000 + (ovr-80)*8000000);
-                      return Math.max(0, Math.min(30000000, 1000000 + (ovr-60)*400000 + Math.max(0,30-age)*200000));
+                      const ageFactor = Math.max(1.0, Math.min(1.5, 1.0 + (28 - Math.min(age, 28)) * 0.1));
+                      if (ovr >= 90) return Math.min(150000000, (120000000 + (ovr-90)*10000000) * ageFactor);
+                      if (ovr >= 85 && age < 25) { const yf = Math.max(1.0, Math.min(1.4, 1.0+(25-age)*0.1)); return Math.min(100000000, (60000000+(ovr-85)*8000000)*yf); }
+                      if (ovr >= 85) return Math.min(80000000, 50000000+(ovr-85)*6000000);
+                      if (ovr >= 80) return Math.min(60000000, (40000000+(ovr-80)*4000000)*ageFactor);
+                      return Math.min(Math.max(1000000+(ovr-60)*1500000+Math.max(0,30-age)*300000, 500000), 40000000);
                     };
                     const calculateSalary = (ovr) => {
-                      if (!ovr || ovr < 40) return 100000;
-                      if (ovr >= 90) return 10000000; if (ovr >= 88) return 7000000;
-                      if (ovr >= 85) return 5000000; if (ovr >= 82) return 3000000;
-                      if (ovr >= 75) return 1500000; if (ovr >= 65) return 500000;
-                      return 100000;
+                      if (!ovr || ovr < 40) return 500000;
+                      if (ovr >= 90) return 8000000; if (ovr >= 88) return 6000000;
+                      if (ovr >= 85) return 4000000; if (ovr >= 82) return 3000000;
+                      if (ovr >= 75) return 2000000; if (ovr >= 65) return 1000000;
+                      return 500000;
                     };
                     let updatedCount = 0;
                     for (const p of allPlayers) {
@@ -1705,7 +1726,7 @@ export default function AdminPanel() {
 
       {/* League Form */}
       <Dialog open={showLeagueForm} onOpenChange={setShowLeagueForm}>
-        <DialogContent>
+        <DialogContent aria-describedby={undefined}>
           <DialogHeader><DialogTitle>Nuova Lega</DialogTitle></DialogHeader>
           <form onSubmit={handleCreateLeague} className="space-y-4">
             <div className="space-y-2"><Label>Nome Lega *</Label><Input value={leagueFormData.name} onChange={(e) => setLeagueFormData({...leagueFormData, name:e.target.value})} placeholder="Es: Serie A Fantasy" required /></div>
@@ -1782,7 +1803,7 @@ export default function AdminPanel() {
 
       {/* Competition Edit */}
       <Dialog open={showCompetitionEditModal} onOpenChange={setShowCompetitionEditModal}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl" aria-describedby={undefined}>
           <DialogHeader><DialogTitle>Modifica: {editingCompetition?.name}</DialogTitle></DialogHeader>
           <form onSubmit={async (e) => {
             e.preventDefault();
