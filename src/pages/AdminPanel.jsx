@@ -881,6 +881,11 @@ export default function AdminPanel() {
       // 2. Elimina TUTTI i player_statuses (infortuni + squalifiche) alla chiusura
       await supabase.from('player_statuses').delete().neq('id', '00000000-0000-0000-0000-000000000000');
 
+      // 2b. Resetta il campo player_status su tutti i giocatori (injured/suspended → null)
+      await supabase.from('players')
+        .update({ player_status: null })
+        .in('player_status', ['injured', 'suspended']);
+
       // 3. Premi finali in base al tipo configurato
       const prizeType = league?.prize_type || 'nessuno';
 
@@ -1132,10 +1137,10 @@ export default function AdminPanel() {
             confirmText="Azzera statistiche giocatori, squalifiche e classifiche? Operazione irreversibile."
             buttonLabel="Azzera Statistiche Giocatori"
             onConfirm={async () => {
-              // 1. Reset colonne statistiche su players
+              // 1. Reset colonne statistiche su players (incluso player_status)
               const { error: e1 } = await supabase
                 .from('players')
-                .update({ goals: 0, assists: 0, mvp_count: 0, yellow_cards: 0, red_cards: 0 })
+                .update({ goals: 0, assists: 0, mvp_count: 0, yellow_cards: 0, red_cards: 0, player_status: null })
                 .neq('id', '00000000-0000-0000-0000-000000000000'); // tutti i record
               if (e1) throw new Error('players: ' + e1.message);
 
@@ -1252,10 +1257,10 @@ export default function AdminPanel() {
                 .update({ budget: 100000000 })
                 .neq('id', '00000000-0000-0000-0000-000000000000');
               if (eb) throw new Error('teams budget: ' + eb.message);
-              // Reset statistiche giocatori
+              // Reset statistiche giocatori (incluso player_status)
               const { error: ep } = await supabase
                 .from('players')
-                .update({ goals: 0, assists: 0, mvp_count: 0, yellow_cards: 0, red_cards: 0 })
+                .update({ goals: 0, assists: 0, mvp_count: 0, yellow_cards: 0, red_cards: 0, player_status: null })
                 .neq('id', '00000000-0000-0000-0000-000000000000');
               if (ep) throw new Error('players stats: ' + ep.message);
             }}
