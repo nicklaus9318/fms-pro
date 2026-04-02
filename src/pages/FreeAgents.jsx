@@ -1,13 +1,12 @@
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/api/supabaseClient';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Users, Search, Grid3X3, List, User } from 'lucide-react';
 import PlayerCard from '@/components/players/PlayerCard';
-import { toast } from 'sonner';
 
 const ROLES = [
   { value: 'all', label: 'Tutti i ruoli' },
@@ -29,23 +28,15 @@ const getSofifaPhotoUrl = (player) => {
   if (player?.photo_url && typeof player.photo_url === 'string') return player.photo_url;
   let sofifaId = player?.id_sofifa;
   if (!sofifaId) return null;
-  sofifaId = String(sofifaId).trim();
-  if (sofifaId.includes('sofifa.com')) {
-    const match = sofifaId.match(/\/player\/(\d+)\//);
-    if (match) sofifaId = match[1];
-    else return null;
-  }
-  sofifaId = sofifaId.replace(/\D/g, '');
+  sofifaId = String(sofifaId).replace(/\D/g, '');
   if (sofifaId.length < 4) return null;
-  // FotMob CDN - nessuna restrizione hotlink
-  return `https://images.fotmob.com/image_resources/playerimages/${sofifaId}.png`;
+  return `https://cdn.sofifa.net/players/${sofifaId}/26/60.png`;
 };
 
 const getSofifaFallbackUrl = (sofifaId) => {
   if (!sofifaId) return null;
   const id = String(sofifaId).replace(/\D/g, '');
   if (id.length < 4) return null;
-  // Fallback FUTWIZ
   return `https://cdn.futwiz.com/assets/img/fc25/faces/${id}.png`;
 };
 
@@ -54,14 +45,20 @@ export default function FreeAgents() {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [viewMode, setViewMode] = useState('grid');
+  const [minOverall, setMinOverall] = useState('');
+  const [maxOverall, setMaxOverall] = useState('');
+  const [minAge, setMinAge] = useState('');
+  const [maxAge, setMaxAge] = useState('');
 
   const queryClient = useQueryClient();
 
   useEffect(() => {
     const loadUser = async () => {
       try {
-        const userData = await base44.auth.me();
-        setUser(userData);
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (!authUser) return;
+        const { data } = await supabase.from('user_roles').select('*').eq('email', authUser.email).single();
+        if (data) setUser(data);
       } catch (e) {}
     };
     loadUser();
@@ -71,18 +68,52 @@ export default function FreeAgents() {
 
   const { data: freePlayers = [], isLoading } = useQuery({
     queryKey: ['freePlayers'],
-    queryFn: () => base44.entities.Player.filter({ status: 'approved' })
+    queryFn: async () => {
+      let all = [];
+      let from = 0;
+      const batchSize = 1000;
+      while (true) {
+        const { data, error } = await supabase
+          .from('players')
+          .select('id,first_name,last_name,role,age,overall_rating,player_value,salary,team_id,id_sofifa,photo_url')
+          .eq('status', 'approved')
+          .is('team_id', null)
+          .order('overall_rating', { ascending: false })
+          .range(from, from + batchSize - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        all = [...all, ...data];
+        if (data.length < batchSize) break;
+        from += batchSize;
+      }
+      return all;
+    },
+    staleTime: 0,
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
   });
 
-  const filteredPlayers = freePlayers
-    .filter(p => !p.team_id)
-    .filter(player => {
-      const matchesSearch = search === '' || 
-        `${player.first_name} ${player.last_name}`.toLowerCase().includes(search.toLowerCase());
-      const matchesRole = roleFilter === 'all' || player.role === roleFilter;
-      return matchesSearch && matchesRole;
-    })
-    .sort((a, b) => (b.overall_rating || 0) - (a.overall_rating || 0));
+  const filteredPlayers = freePlayers.filter(player => {
+    const matchesSearch = search === '' ||
+      `${player.first_name} ${player.last_name}`.toLowerCase().includes(search.toLowerCase());
+    const matchesRole = roleFilter === 'all' || player.role === roleFilter;
+    const matchesOvrMin = minOverall === '' || (player.overall_rating && player.overall_rating >= parseInt(minOverall));
+    const matchesOvrMax = maxOverall === '' || (player.overall_rating && player.overall_rating <= parseInt(maxOverall));
+    const matchesAgeMin = minAge === '' || (player.age && player.age >= parseInt(minAge));
+    const matchesAgeMax = maxAge === '' || (player.age && player.age <= parseInt(maxAge));
+    return matchesSearch && matchesRole && matchesOvrMin && matchesOvrMax && matchesAgeMin && matchesAgeMax;
+  });
+
+  const hasActiveFilters = minOverall || maxOverall || minAge || maxAge || roleFilter !== 'all' || search;
+
+  const resetFilters = () => {
+    setSearch('');
+    setRoleFilter('all');
+    setMinOverall('');
+    setMaxOverall('');
+    setMinAge('');
+    setMaxAge('');
+  };
 
   return (
     <div className="space-y-6">
@@ -96,7 +127,8 @@ export default function FreeAgents() {
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-4">
+      {/* Filtri principali */}
+      <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <Input
@@ -106,9 +138,8 @@ export default function FreeAgents() {
             className="pl-10"
           />
         </div>
-
         <Select value={roleFilter} onValueChange={setRoleFilter}>
-          <SelectTrigger className="w-full sm:w-[200px]">
+          <SelectTrigger className="w-full sm:w-[180px]">
             <SelectValue placeholder="Ruolo" />
           </SelectTrigger>
           <SelectContent>
@@ -117,7 +148,6 @@ export default function FreeAgents() {
             ))}
           </SelectContent>
         </Select>
-
         <div className="flex gap-1 bg-slate-100 p-1 rounded-lg">
           <Button variant={viewMode === 'grid' ? 'secondary' : 'ghost'} size="icon" onClick={() => setViewMode('grid')} className="h-8 w-8">
             <Grid3X3 className="w-4 h-4" />
@@ -127,6 +157,36 @@ export default function FreeAgents() {
           </Button>
         </div>
       </div>
+
+      {/* Filtri Overall e Età */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-slate-50 rounded-xl border border-slate-200">
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-slate-500">OVR Min</label>
+          <Input type="number" placeholder="Es: 75" value={minOverall} onChange={(e) => setMinOverall(e.target.value)} className="h-9 text-sm" />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-slate-500">OVR Max</label>
+          <Input type="number" placeholder="Es: 91" value={maxOverall} onChange={(e) => setMaxOverall(e.target.value)} className="h-9 text-sm" />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-slate-500">Età Min</label>
+          <Input type="number" placeholder="Es: 18" value={minAge} onChange={(e) => setMinAge(e.target.value)} className="h-9 text-sm" />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-slate-500">Età Max</label>
+          <Input type="number" placeholder="Es: 30" value={maxAge} onChange={(e) => setMaxAge(e.target.value)} className="h-9 text-sm" />
+        </div>
+      </div>
+
+      {/* Badge risultati + reset */}
+      {hasActiveFilters && (
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-slate-500">{filteredPlayers.length} risultati</span>
+          <Button variant="ghost" size="sm" onClick={resetFilters} className="text-xs text-slate-400 hover:text-slate-600 h-7 px-2">
+            ✕ Reset filtri
+          </Button>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -199,7 +259,12 @@ export default function FreeAgents() {
         <Card className="bg-slate-50 border-dashed">
           <CardContent className="py-12 text-center">
             <Users className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-            <p className="text-slate-500">Nessun giocatore svincolato</p>
+            <p className="text-slate-500">Nessun giocatore trovato</p>
+            {hasActiveFilters && (
+              <Button variant="outline" size="sm" onClick={resetFilters} className="mt-3">
+                Reset filtri
+              </Button>
+            )}
           </CardContent>
         </Card>
       )}
