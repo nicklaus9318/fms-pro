@@ -86,7 +86,7 @@ export default function Players() {
 
   const isAdmin = user?.role === 'admin';
 
-  const { data: allPlayers = [], isLoading } = useQuery({
+  const { data: allPlayers = [], isLoading, isFetching } = useQuery({
     queryKey: ['allPlayers'],
     queryFn: async () => {
       // Carica tutti i giocatori in batch da 1000 (limite PostgREST)
@@ -107,7 +107,10 @@ export default function Players() {
       }
       return all;
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 0,
+    gcTime: 10 * 60 * 1000,
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
   });
 
   const { data: teams = [] } = useQuery({
@@ -117,29 +120,6 @@ export default function Players() {
       return data || [];
     }
   });
-
-  const calcSalary = (ovr) => {
-    if (!ovr) return 500000;
-    const r = parseInt(ovr);
-    if (r >= 90) return 8000000;
-    if (r >= 88) return 6000000;
-    if (r >= 85) return 4000000;
-    if (r >= 82) return 3000000;
-    if (r >= 75) return 2000000;
-    if (r >= 65) return 1000000;
-    return 500000;
-  };
-
-  const calcValue = (ovr, age) => {
-    if (!ovr || parseInt(ovr) < 40) return 500000;
-    const o = parseInt(ovr), a = parseInt(age) || 25;
-    const ageFactor = Math.max(1.0, Math.min(1.5, 1.0 + (28 - Math.min(a, 28)) * 0.1));
-    if (o >= 90) return Math.min(150000000, (120000000 + (o - 90) * 10000000) * ageFactor);
-    if (o >= 85 && a < 25) { const yf = Math.max(1.0, Math.min(1.4, 1.0 + (25 - a) * 0.1)); return Math.min(100000000, (60000000 + (o - 85) * 8000000) * yf); }
-    if (o >= 85) return Math.min(80000000, 50000000 + (o - 85) * 6000000);
-    if (o >= 80) return Math.min(60000000, (40000000 + (o - 80) * 4000000) * ageFactor);
-    return Math.min(Math.max(1000000 + (o - 60) * 1500000 + Math.max(0, 30 - a) * 300000, 500000), 40000000);
-  };
 
   const sanitizePlayerData = (data) => {
     const allowed = [
@@ -161,11 +141,6 @@ export default function Players() {
     if (out.overall_rating) out.overall_rating = parseInt(out.overall_rating) || null;
     if (out.jersey_number) out.jersey_number = parseInt(out.jersey_number) || null;
     if (out.lotto_number) out.lotto_number = parseInt(out.lotto_number) || null;
-    // Ricalcola sempre valore e stipendio se c'è l'overall
-    if (out.overall_rating) {
-      out.salary = calcSalary(out.overall_rating);
-      out.player_value = calcValue(out.overall_rating, out.age);
-    }
     return out;
   };
 
@@ -220,8 +195,10 @@ export default function Players() {
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Giocatori</h1>
           <p className="text-slate-500">
-            Trovati: {filteredPlayers.length} di {allPlayers.length} giocatori
-            {filteredPlayers.length > playersPerPage && ` (pagina ${currentPage + 1} di ${totalPages})`}
+            {isFetching && !isLoading
+              ? <span className="flex items-center gap-1"><span className="w-3 h-3 border-2 border-slate-300 border-t-emerald-500 rounded-full animate-spin inline-block" /> Aggiornamento...</span>
+              : <>Trovati: {filteredPlayers.length} di {allPlayers.length} giocatori{filteredPlayers.length > playersPerPage && ` (pagina ${currentPage + 1} di ${totalPages})`}</>
+            }
           </p>
         </div>
         {isAdmin && (
