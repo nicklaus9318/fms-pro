@@ -794,7 +794,7 @@ export default function Calendar() {
       )}
 
       <Dialog open={showMatchDetails} onOpenChange={(open) => { setShowMatchDetails(open); if (!open) setMatchPhotoWarnings([]); }}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg" aria-describedby={undefined}>
           {selectedMatch && (
             <>
               <DialogHeader><DialogTitle>Dettagli Partita</DialogTitle></DialogHeader>
@@ -913,7 +913,7 @@ export default function Calendar() {
 
       {/* Dialog selezione formato competizione */}
       <Dialog open={showFormatDialog} onOpenChange={setShowFormatDialog}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>Seleziona Formato Competizione</DialogTitle>
           </DialogHeader>

@@ -358,7 +358,7 @@ export default function AsteBusteChiuse() {
 
       {/* Dialog Mie Offerte */}
       <Dialog open={showMyBids} onOpenChange={setShowMyBids}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Gavel className="w-5 h-5 text-amber-500" />
@@ -420,7 +420,7 @@ export default function AsteBusteChiuse() {
       </Dialog>
 
       <Dialog open={showBidModal} onOpenChange={setShowBidModal}>
-        <DialogContent>
+        <DialogContent aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>Offerta per {selectedAuction?.player_name}</DialogTitle>
           </DialogHeader>
