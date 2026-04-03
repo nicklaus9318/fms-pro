@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from './utils';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/api/supabaseClient';
 import ConnectionStatus from '@/components/ui/connection-status';
 import { ErrorBoundary } from '@/components/ui/error-boundary';
 import { 
@@ -35,8 +35,10 @@ export default function Layout({ children, currentPageName }) {
   useEffect(() => {
     const loadUser = async () => {
       try {
-        const userData = await base44.auth.me();
-        setUser(userData);
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (!authUser) return;
+        const { data } = await supabase.from('user_roles').select('*').eq('email', authUser.email).single();
+        if (data) setUser(data);
       } catch (e) {
         console.log('User not logged in');
       }
@@ -50,7 +52,6 @@ export default function Layout({ children, currentPageName }) {
     { name: 'Dashboard', href: createPageUrl('SimpleDashboard'), icon: LayoutDashboard, page: 'SimpleDashboard' },
     { name: 'Censimento', href: createPageUrl('Censimento'), icon: UserCircle, page: 'Censimento' },
     { name: 'Giocatori', href: createPageUrl('Players'), icon: Users, page: 'Players' },
-    { name: 'Svincolati', href: createPageUrl('FreeAgents'), icon: Users, page: 'FreeAgents' },
     { name: 'Squadre', href: createPageUrl('Teams'), icon: Shield, page: 'Teams' },
     { name: 'Lista Utenti', href: createPageUrl('ListaUtenti'), icon: Users, page: 'ListaUtenti' },
     { name: 'Calciomercato', href: createPageUrl('Market'), icon: TrendingUp, page: 'Market' },
@@ -193,7 +194,7 @@ export default function Layout({ children, currentPageName }) {
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem 
-                    onClick={() => base44.auth.logout()}
+                    onClick={() => supabase.auth.signOut()}
                     className="text-red-600 focus:text-red-600"
                   >
                     <LogOut className="w-4 h-4 mr-2" />
