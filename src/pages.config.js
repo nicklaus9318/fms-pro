@@ -10,7 +10,6 @@ const Calendar           = lazy(() => import('./pages/Calendar'));
 const CalendarioGenerale = lazy(() => import('./pages/CalendarioGenerale'));
 const Censimento         = lazy(() => import('./pages/Censimento'));
 const Dashboard          = lazy(() => import('./pages/Dashboard'));
-const FreeAgents         = lazy(() => import('./pages/FreeAgents'));
 const GestioneAste       = lazy(() => import('./pages/GestioneAste'));
 const GlobalStats        = lazy(() => import('./pages/GlobalStats'));
 const HallOfFame         = lazy(() => import('./pages/HallOfFame'));
@@ -36,7 +35,6 @@ export const PAGES = {
     "CalendarioGenerale": CalendarioGenerale,
     "Censimento":         Censimento,
     "Dashboard":          Dashboard,
-    "FreeAgents":         FreeAgents,
     "GestioneAste":       GestioneAste,
     "GlobalStats":        GlobalStats,
     "HallOfFame":         HallOfFame,

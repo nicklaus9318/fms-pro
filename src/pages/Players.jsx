@@ -31,16 +31,9 @@ const getSofifaPhotoUrl = (player) => {
   if (player?.photo_url && typeof player.photo_url === 'string') return player.photo_url;
   let sofifaId = player?.id_sofifa;
   if (!sofifaId) return null;
-  sofifaId = String(sofifaId).trim();
-  if (sofifaId.includes('sofifa.com')) {
-    const match = sofifaId.match(/\/player\/(\d+)\//);
-    if (match) sofifaId = match[1];
-    else return null;
-  }
-  sofifaId = sofifaId.replace(/\D/g, '');
+  sofifaId = String(sofifaId).replace(/\D/g, '');
   if (sofifaId.length < 4) return null;
-  // FotMob CDN - nessuna restrizione hotlink
-  return `https://images.fotmob.com/image_resources/playerimages/${sofifaId}.png`;
+  return `https://cdn.sofifa.net/players/${sofifaId}/26/60.png`;
 };
 
 const getSofifaFallbackUrl = (sofifaId) => {
@@ -107,9 +100,9 @@ export default function Players() {
       }
       return all;
     },
-    staleTime: 0,
-    gcTime: 10 * 60 * 1000,
-    refetchOnMount: true,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
+    refetchOnMount: false,
     refetchOnWindowFocus: false,
   });
 
