@@ -59,9 +59,8 @@ export default function Players() {
   const [maxAge, setMaxAge] = useState('');
   const [availabilityFilter, setAvailabilityFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(0);
-  const playersPerPage = 100;
+  
 
-  useEffect(() => { setCurrentPage(0); }, [search, roleFilter, statusFilter, minOverall, maxOverall, minAge, maxAge, availabilityFilter]);
 
   const queryClient = useQueryClient();
 
@@ -79,32 +78,65 @@ export default function Players() {
 
   const isAdmin = user?.role === 'admin';
 
-  const { data: allPlayers = [], isLoading, isFetching } = useQuery({
-    queryKey: ['allPlayers'],
+  const PAGE_SIZE = 100;
+
+  // Aggiunta debounce sulla ricerca per non fare query ad ogni tasto
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Reset pagina quando cambiano i filtri
+  useEffect(() => { setCurrentPage(0); }, [debouncedSearch, roleFilter, statusFilter, minOverall, maxOverall, minAge, maxAge, availabilityFilter]);
+
+  // Query SERVER-SIDE: filtri, ordinamento e paginazione fatti da Supabase
+  const { data: queryResult = { players: [], total: 0 }, isLoading, isFetching } = useQuery({
+    queryKey: ['allPlayers', debouncedSearch, roleFilter, statusFilter, minOverall, maxOverall, minAge, maxAge, availabilityFilter, currentPage],
     queryFn: async () => {
-      // Carica tutti i giocatori in batch da 1000 (limite PostgREST)
-      let all = [];
-      let from = 0;
-      const batchSize = 1000;
-      while (true) {
-        const { data, error } = await supabase
-          .from('players')
-          .select('id,first_name,last_name,role,age,overall_rating,player_value,salary,team_id,status,id_sofifa,sofifa_link,photo_url,goals,assists,mvp_count,player_status,yellow_cards_accumulated,nationality,created_by')
-          .order('overall_rating', { ascending: false })
-          .range(from, from + batchSize - 1);
-        if (error) throw error;
-        if (!data || data.length === 0) break;
-        all = [...all, ...data];
-        if (data.length < batchSize) break;
-        from += batchSize;
+      let q = supabase
+        .from('players')
+        .select('id,first_name,last_name,role,age,overall_rating,player_value,salary,team_id,status,id_sofifa,sofifa_link,photo_url,goals,assists,mvp_count,player_status,yellow_cards_accumulated,nationality,created_by', { count: 'exact' })
+        .order('overall_rating', { ascending: false })
+        .range(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE - 1);
+
+      // Filtro status
+      if (statusFilter === 'approved') q = q.eq('status', 'approved');
+      else if (statusFilter === 'pending') q = q.eq('status', 'pending');
+      else q = q.eq('status', 'approved'); // default: solo approvati
+
+      // Filtro ricerca nome
+      if (debouncedSearch.trim()) {
+        q = q.or(`first_name.ilike.%${debouncedSearch.trim()}%,last_name.ilike.%${debouncedSearch.trim()}%`);
       }
-      return all;
+
+      // Filtro ruolo
+      if (roleFilter !== 'all') q = q.eq('role', roleFilter);
+
+      // Filtro disponibilità
+      if (availabilityFilter === 'free') q = q.is('team_id', null);
+      else if (availabilityFilter === 'assigned') q = q.not('team_id', 'is', null);
+
+      // Filtri overall
+      if (minOverall) q = q.gte('overall_rating', parseInt(minOverall));
+      if (maxOverall) q = q.lte('overall_rating', parseInt(maxOverall));
+
+      // Filtri età
+      if (minAge) q = q.gte('age', parseInt(minAge));
+      if (maxAge) q = q.lte('age', parseInt(maxAge));
+
+      const { data, count, error } = await q;
+      if (error) throw error;
+      return { players: data || [], total: count || 0 };
     },
-    staleTime: 5 * 60 * 1000,
-    gcTime: 15 * 60 * 1000,
-    refetchOnMount: false,
-    refetchOnWindowFocus: false,
+    staleTime: 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+    keepPreviousData: true,
   });
+
+  const allPlayers = queryResult.players;
+  const totalCount = queryResult.total;
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
 
   const { data: teams = [] } = useQuery({
     queryKey: ['teams'],
@@ -163,24 +195,7 @@ export default function Players() {
   const handleEdit = (player) => { setSelectedPlayer(player); setShowEditModal(true); };
   const handleSavePlayer = async (data) => { await updateMutation.mutateAsync({ id: selectedPlayer.id, data }); };
 
-  const filteredPlayers = allPlayers.filter(player => {
-    const matchesSearch = search === '' || `${player.first_name} ${player.last_name}`.toLowerCase().includes(search.toLowerCase());
-    const matchesRole = roleFilter === 'all' || player.role === roleFilter;
-    const matchesStatus = statusFilter === 'all' || player.status === statusFilter;
-    const matchesOverall = (minOverall === '' || (player.overall_rating && player.overall_rating >= parseInt(minOverall))) &&
-                           (maxOverall === '' || (player.overall_rating && player.overall_rating <= parseInt(maxOverall)));
-    const matchesAge = (minAge === '' || (player.age && player.age >= parseInt(minAge))) &&
-                       (maxAge === '' || (player.age && player.age <= parseInt(maxAge)));
-    const matchesAvailability = availabilityFilter === 'all' ||
-      (availabilityFilter === 'free' && !player.team_id) ||
-      (availabilityFilter === 'assigned' && player.team_id);
-    return matchesSearch && matchesRole && matchesStatus && matchesOverall && matchesAge && matchesAvailability;
-  }).sort((a, b) => (b.overall_rating || 0) - (a.overall_rating || 0));
-
   const getTeamName = (teamId) => teams.find(t => t.id === teamId)?.name || 'Svincolato';
-
-  const totalPages = Math.ceil(filteredPlayers.length / playersPerPage) || 1;
-  const paginatedPlayers = filteredPlayers.slice(currentPage * playersPerPage, (currentPage + 1) * playersPerPage);
 
   return (
     <div className="space-y-6">
@@ -188,9 +203,9 @@ export default function Players() {
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Giocatori</h1>
           <p className="text-slate-500">
-            {isFetching && !isLoading
-              ? <span className="flex items-center gap-1"><span className="w-3 h-3 border-2 border-slate-300 border-t-emerald-500 rounded-full animate-spin inline-block" /> Aggiornamento...</span>
-              : <>Trovati: {filteredPlayers.length} di {allPlayers.length} giocatori{filteredPlayers.length > playersPerPage && ` (pagina ${currentPage + 1} di ${totalPages})`}</>
+            {isFetching
+              ? <span className="flex items-center gap-1"><span className="w-3 h-3 border-2 border-slate-300 border-t-emerald-500 rounded-full animate-spin inline-block" /> Caricamento...</span>
+              : <>Trovati: {totalCount} giocatori {totalPages > 1 && `(pagina ${currentPage + 1} di ${totalPages})`}</>
             }
           </p>
         </div>
@@ -264,10 +279,10 @@ export default function Players() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {[...Array(8)].map((_, i) => <div key={i} className="h-32 bg-slate-100 rounded-xl animate-pulse" />)}
         </div>
-      ) : paginatedPlayers.length > 0 ? (
+      ) : allPlayers.length > 0 ? (
         viewMode === 'grid' ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {paginatedPlayers.map(player => (
+            {allPlayers.map(player => (
               <PlayerCard key={player.id} player={player} onClick={isAdmin ? () => handleEdit(player) : undefined}
                 showTeam={true} teamName={getTeamName(player.team_id)} showHistoryButton={true}
                 showDeleteButton={isAdmin} />
@@ -290,7 +305,7 @@ export default function Players() {
                 </tr>
               </thead>
               <tbody>
-                {paginatedPlayers.map(player => {
+                {allPlayers.map(player => {
                   const photoUrl = getSofifaPhotoUrl(player);
                   return (
                     <tr key={player.id} className="border-t border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer"
@@ -351,7 +366,7 @@ export default function Players() {
         </div>
       )}
 
-      {filteredPlayers.length > playersPerPage && (
+      {totalPages > 1 && (
         <div className="flex justify-between items-center mt-6 pt-6 border-t border-slate-200">
           <Button variant="outline" onClick={() => setCurrentPage(prev => Math.max(0, prev - 1))} disabled={currentPage === 0}>Precedente</Button>
           <span className="text-sm text-slate-700">Pagina {currentPage + 1} di {totalPages}</span>
