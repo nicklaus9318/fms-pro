@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/api/supabaseClient';
 import { Trophy } from 'lucide-react';
 
@@ -10,6 +10,19 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [registrationsOpen, setRegistrationsOpen] = useState(true);
+
+  useEffect(() => {
+    const checkRegistrations = async () => {
+      const { data } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'registrations_status')
+        .single();
+      setRegistrationsOpen(data?.value !== 'closed');
+    };
+    checkRegistrations();
+  }, []);
 
   const handleSubmit = async () => {
     setLoading(true);
@@ -21,6 +34,19 @@ export default function LoginPage() {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       } else {
+        // Controlla se le registrazioni sono aperte
+        const { data: regSetting } = await supabase
+          .from('app_settings')
+          .select('value')
+          .eq('key', 'registrations_status')
+          .single();
+
+        if (regSetting?.value === 'closed') {
+          setError('Le registrazioni sono attualmente chiuse. Contatta un amministratore per accedere.');
+          setLoading(false);
+          return;
+        }
+
         const { error } = await supabase.auth.signUp({
           email,
           password,
@@ -116,13 +142,31 @@ export default function LoginPage() {
           </div>
 
           <p className="mt-6 text-center text-slate-400 text-sm">
-            {isLogin ? 'Non hai un account?' : 'Hai già un account?'}{' '}
-            <button
-              onClick={() => { setIsLogin(!isLogin); setError(''); setMessage(''); }}
-              className="text-emerald-400 hover:text-emerald-300 font-medium"
-            >
-              {isLogin ? 'Registrati' : 'Accedi'}
-            </button>
+            {isLogin ? (
+              registrationsOpen ? (
+                <>
+                  Non hai un account?{' '}
+                  <button
+                    onClick={() => { setIsLogin(false); setError(''); setMessage(''); }}
+                    className="text-emerald-400 hover:text-emerald-300 font-medium"
+                  >
+                    Registrati
+                  </button>
+                </>
+              ) : (
+                <span className="text-slate-500">Le registrazioni sono attualmente chiuse.</span>
+              )
+            ) : (
+              <>
+                Hai già un account?{' '}
+                <button
+                  onClick={() => { setIsLogin(true); setError(''); setMessage(''); }}
+                  className="text-emerald-400 hover:text-emerald-300 font-medium"
+                >
+                  Accedi
+                </button>
+              </>
+            )}
           </p>
         </div>
       </div>
